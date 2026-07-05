@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+data/cache/
+data/uploads/
+data/*.db
+*.grib2
+*.idx

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="基于光路与云层几何关系的朝霞晚霞智能预测">
+  <title>霞光时刻｜未来三天霞光预测</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip-link" href="#forecast">跳到三日预测</a>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="霞光时刻首页">
+      <span class="brand-mark" aria-hidden="true"></span>霞光时刻
+    </a>
+    <nav class="desktop-nav" aria-label="主导航">
+      <a href="#forecast">三日预测</a><a href="#method">预测原理</a><a href="#trust">数据记录</a>
+    </nav>
+    <button class="location-pill" id="locateButton" type="button" aria-haspopup="dialog"><span class="location-dot"></span><span id="locationName">正在定位</span><span aria-hidden="true">⌄</span></button>
+    <button class="menu-button" id="menuButton" aria-label="打开菜单" aria-expanded="false"><span></span><span></span></button>
+  </header>
+  <div class="mobile-menu" id="mobileMenu" aria-hidden="true">
+    <nav aria-label="移动端导航">
+      <a href="#forecast"><span>01</span>三日预测</a>
+      <a href="#method"><span>02</span>预测原理</a>
+      <a href="#trust"><span>03</span>数据记录</a>
+    </nav>
+    <button class="mobile-location" id="mobileLocation" type="button">正在定位 · 选择城市</button>
+  </div>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-orbit" aria-hidden="true"><i></i></div>
+      <div class="hero-copy reveal">
+        <p class="eyebrow"><span>未来 3 天</span><span id="forecastTypeLabel">晚霞预测</span></p>
+        <div class="period-switch" role="group" aria-label="选择霞光时段">
+          <button type="button" data-period="morning" aria-pressed="false">朝霞</button>
+          <button type="button" data-period="evening" aria-pressed="true">晚霞</button>
+        </div>
+        <h1><span id="heroTimeWord">今晚</span>，<br><em>天空会燃烧吗？</em></h1>
+      </div>
+      <div class="hero-result reveal">
+        <div>
+          <p class="result-label" id="resultLabel">今日晚霞潜力</p>
+          <p class="hero-score"><span id="heroScore">--</span><small>/ 100</small></p>
+        </div>
+        <div class="hero-verdict">
+          <span class="status-dot"></span>
+          <strong id="heroLevel">正在观测</strong>
+          <p id="heroSummary">正在检查日落光路与高云画布。</p>
+        </div>
+      </div>
+      <a class="scroll-hint" href="#forecast">查看三日预测 <span>↓</span></a>
+    </section>
+
+    <section class="forecast-section" id="forecast">
+      <div class="section-heading reveal">
+        <p class="section-index">01 / 预报</p>
+        <h2>未来三天，<br>哪一天值得等？</h2>
+        <p>不是猜天气。我们沿着日落方向，检查光能否穿过低云，再判断头顶是否有一张合适的高云画布。</p>
+      </div>
+      <div class="forecast-grid" id="forecastGrid" aria-live="polite">
+        <article class="forecast-card skeleton"></article><article class="forecast-card skeleton"></article><article class="forecast-card skeleton"></article>
+      </div>
+      <p class="data-notice" id="dataNotice">正在连接预测模型…</p>
+    </section>
+
+    <section class="method-section" id="method">
+      <div class="method-title reveal">
+        <p class="section-index light">02 / 方法</p>
+        <h2>让光穿过去，<br>让云留下来。</h2>
+      </div>
+      <div class="method-grid reveal">
+        <article><span>光路 / A</span><h3>日落方向<br>不能堵</h3><p>结合低云、能见度与 AOD，估计霞光到达本地云层前的透射率。</p></article>
+        <article><span>画布 / B</span><h3>头顶高云<br>刚刚好</h3><p>30%—70% 的中高云与合适光学厚度，更容易被低角度阳光染亮。</p></article>
+        <article><span>结论 / A × B</span><h3>缺一不可</h3><p>评分采用物理门控相乘。没有光路或没有画布，都不会得到虚假的高分。</p></article>
+      </div>
+    </section>
+
+    <section class="trust-section" id="trust">
+      <div class="section-heading compact reveal">
+        <p class="section-index">03 / 记录</p>
+        <h2>每一次抬头，<br>都让下一次更准。</h2>
+      </div>
+      <div class="stats reveal">
+        <div><strong class="counter" id="predictionCount" data-target="0">0</strong><span>次坐标预测</span></div>
+        <div><strong class="counter" id="feedbackCount" data-target="0">0</strong><span>份实拍报告</span></div>
+        <div><strong class="counter" data-target="3">0</strong><span>天气数据层</span></div>
+      </div>
+    </section>
+
+    <section class="cta-section reveal">
+      <p class="section-index">一起校准天空</p>
+      <h2>刚刚的晚霞，<br>预测准了吗？</h2>
+      <p>一条“命中”或“翻车”，比一百句算法自信更有用。</p>
+      <button class="primary-button" id="feedbackButton">反馈观测结果 <span>↗</span></button>
+    </section>
+  </main>
+
+  <footer><a class="brand" href="#top"><span class="brand-mark"></span>霞光时刻</a><p>把复杂气象，变成一次简单的抬头。</p><span>© 2026</span></footer>
+
+  <dialog id="feedbackDialog">
+    <form method="dialog" id="feedbackForm">
+      <div class="dialog-head"><div><p class="section-index">观测反馈</p><h2>今天烧了吗？</h2></div><button value="cancel" aria-label="关闭">×</button></div>
+      <div class="result-options">
+        <label><input type="radio" name="result" value="命中" checked><span>命中</span></label>
+        <label><input type="radio" name="result" value="一般"><span>一般</span></label>
+        <label><input type="radio" name="result" value="翻车"><span>翻车</span></label>
+      </div>
+      <label class="note-label">补充一句（可选）<textarea name="note" maxlength="500" placeholder="例如：西边低云比预期更多"></textarea></label>
+      <label class="photo-label"><span>添加实拍（可选）</span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp"><small>支持 JPG、PNG、WebP，最大 8MB</small></label>
+      <button class="primary-button submit" value="default" type="submit">提交反馈</button>
+      <p class="form-message" id="formMessage"></p>
+    </form>
+  </dialog>
+  <dialog id="cityDialog" class="city-dialog">
+    <div class="city-panel">
+      <div class="dialog-head"><div><p class="section-index">选择地点</p><h2>去哪里看天空？</h2></div><button id="closeCityDialog" type="button" aria-label="关闭">×</button></div>
+      <button class="current-location-button" id="currentLocationButton" type="button"><span class="location-dot"></span><span><strong>使用当前位置</strong><small>自动读取设备定位</small></span><b>↗</b></button>
+      <label class="city-search"><span class="sr-only">搜索城市</span><input id="citySearch" type="search" placeholder="搜索城市，例如：杭州" autocomplete="off"></label>
+      <div class="city-list" id="cityList" aria-live="polite"></div>
+    </div>
+  </dialog>
+  <script src="script.js" defer></script>
+</body>
+</html>

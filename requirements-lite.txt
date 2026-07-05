@@ -1,0 +1,5 @@
+# 首次看界面只需安装这一组轻量依赖。
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+python-multipart>=0.0.9,<1.0
+astral>=3.2,<4.0

@@ -1,0 +1,14 @@
+# Web 服务与表单上传
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+python-multipart>=0.0.9,<1.0
+
+# 太阳位置与基础科学计算
+astral>=3.2,<4.0
+numpy>=1.26,<3.0
+
+# 真实气象模式（体积较大；Mock 模式不依赖这些库）
+herbie-data>=2024.3.0
+xarray>=2024.1.0
+cfgrib>=0.9.10
+metpy>=1.6

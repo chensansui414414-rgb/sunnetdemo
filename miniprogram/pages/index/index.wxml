@@ -1,0 +1,26 @@
+<view class="hero">
+  <view class="top-controls">
+    <picker mode="selector" range="{{cityNames}}" value="{{cityIndex}}" bindchange="chooseCity"><text>{{cityNames[cityIndex]}}⌄</text></picker>
+    <view class="period-control"><button class="{{period === 'morning' ? 'selected' : ''}}" data-period="morning" bindtap="choosePeriod">朝霞</button><button class="{{period === 'evening' ? 'selected' : ''}}" data-period="evening" bindtap="choosePeriod">晚霞</button></view>
+  </view>
+  <text class="eyebrow">未来 3 天 · {{period === 'morning' ? '朝霞' : '晚霞'}}预测</text>
+  <text class="title">{{period === 'morning' ? '今晨' : '今晚'}}，\n天空会燃烧吗？</text>
+  <view wx:if="{{days.length}}" class="today"><text class="score">{{days[0].score}}</text><text>/ 100 · {{days[0].level}}</text></view>
+</view>
+<view class="content">
+  <text class="section-label">01 / 三日预报</text>
+  <text class="heading">哪一天\n值得等？</text>
+  <text wx:if="{{loading}}" class="hint">正在检查光路与云层…</text>
+  <text wx:if="{{error}}" class="hint">{{error}}</text>
+  <view wx:for="{{days}}" wx:key="date" class="card {{index === 0 ? 'active' : ''}}" bindtap="toggleDetail" data-index="{{index}}">
+    <text class="date">{{item.date}}</text>
+    <text class="card-score">{{item.score}}</text>
+    <text class="level">{{item.level}}</text>
+    <text class="summary">{{item.summary}}</text>
+    <view wx:if="{{item.expanded}}" class="details">
+      <text>光照通道 {{item.metrics.light_channel}}%</text>
+      <text>高云 {{item.metrics.high_cloud}}%</text>
+      <text>能见度 {{item.metrics.visibility}} km</text>
+    </view>
+  </view>
+</view>

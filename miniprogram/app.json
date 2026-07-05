@@ -1,0 +1,9 @@
+{
+  "pages": ["pages/index/index"],
+  "window": {
+    "navigationBarTitleText": "霞光时刻",
+    "navigationBarBackgroundColor": "#11110f",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f8f8f5"
+  }
+}
