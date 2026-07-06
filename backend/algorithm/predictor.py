@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any
+from typing import Any, Union
 
 
 @dataclass(frozen=True)
@@ -41,7 +41,7 @@ def calculate_sun_position(lat: float, lon: float, target_date: date, period: st
         return SunPosition(-0.833, azimuth_deg, event)
 
 
-def check_cloud_optical_depth(cloud_water: float, cloud_ice: float) -> dict[str, float | str]:
+def check_cloud_optical_depth(cloud_water: float, cloud_ice: float) -> dict[str, Union[float, str]]:
     """以液态水/冰水路径估计云光学厚度，薄而可上色的高云最优。"""
     optical_depth = max(0.0, 0.10 * cloud_water + 0.055 * cloud_ice)
     # 目标光学厚度约 3.8；过薄无画布、过厚不透光，采用对数高斯响应。
@@ -50,7 +50,7 @@ def check_cloud_optical_depth(cloud_water: float, cloud_ice: float) -> dict[str,
     return {"optical_depth": round(optical_depth, 2), "quality": round(quality, 3), "label": label}
 
 
-def calculate_obstruction(sun_azimuth: float, cloud_cover_data: dict[str, float]) -> dict[str, float | str]:
+def calculate_obstruction(sun_azimuth: float, cloud_cover_data: dict[str, float]) -> dict[str, Union[float, str]]:
     """计算太阳方向低云遮挡；按太阳方位自动选择东向或西向扇区。"""
     is_east = sun_azimuth < 180
     sector = "east_low_cloud_cover" if is_east else "west_low_cloud_cover"

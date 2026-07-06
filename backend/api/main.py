@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import shutil
 import uuid
+from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Union
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +15,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend.algorithm.predictor import predict_three_days
+from backend.algorithm.predictor import calculate_sun_position, predict_three_days
+from backend.data_fetcher.grib_profile import PressureProfileFetcher
 from backend.data_fetcher.weather_fetcher import WeatherDataFetcher
 from backend.storage.repository import Repository
 
@@ -27,6 +29,7 @@ app = FastAPI(title="霞光时刻 API", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 fetcher = WeatherDataFetcher(DATA_DIR / "cache")
 repository = Repository(DATA_DIR / "forecast.db")
+profile_fetcher = PressureProfileFetcher(DATA_DIR / "cache" / "profiles")
 
 
 class FeedbackBody(BaseModel):
@@ -61,8 +64,21 @@ def forecast(lat: float = 32.0603, lon: float = 118.7969, period: Literal["morni
     }
 
 
+@app.get("/api/profile")
+def pressure_profile(lat: float, lon: float, forecast_date: date, period: Literal["morning", "evening"] = "evening") -> dict:
+    """返回太阳方向 600 km 压力层剖面；详情页按需调用。"""
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(status_code=422, detail="经纬度超出有效范围")
+    sun = calculate_sun_position(lat, lon, forecast_date, period)
+    result = profile_fetcher.fetch(lat, lon, sun.event_time, sun.azimuth)
+    return {
+        "location": {"lat": lat, "lon": lon}, "date": forecast_date.isoformat(), "period": period,
+        "sun_azimuth": round(sun.azimuth, 1), "event_time": sun.event_time.isoformat(), **result,
+    }
+
+
 @app.post("/api/feedback")
-def feedback(body: FeedbackBody) -> dict[str, int | str]:
+def feedback(body: FeedbackBody) -> dict[str, Union[int, str]]:
     payload = body.model_dump() if hasattr(body, "model_dump") else body.dict()
     feedback_id = repository.save_feedback(**payload)
     return {"message": "反馈已收到，感谢你帮预测变得更准。", "id": feedback_id}
@@ -73,7 +89,7 @@ def feedback_with_photo(
     lat: float = Form(...), lon: float = Form(...), forecast_date: str = Form(...),
     result: Literal["命中", "翻车", "一般"] = Form(...), note: str = Form(default=""),
     photo: UploadFile = File(...),
-) -> dict[str, int | str]:
+) -> dict[str, Union[int, str]]:
     """保存一份带实拍图片的反馈；文件类型与大小均做基础限制。"""
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(status_code=422, detail="经纬度超出有效范围")

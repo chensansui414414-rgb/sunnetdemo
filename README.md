@@ -34,7 +34,21 @@ pip install -r requirements.txt
 ENABLE_REAL_WEATHER=1 python -m backend.api
 ```
 
-当前真实模型下载器已经包含 Herbie 的安全连接入口，但 GRIB 字段映射仍会主动降级到 Mock 数据，避免首次运行下载数 GB 文件。下一阶段应按部署区域接入：GFS 负责全球基础场，HRRR 仅覆盖北美，南京等中国区域需继续使用 GFS 或替换为可授权的区域模式；CAMS 负责 AOD。
+基础预报默认使用 Open-Meteo / CAMS；压力层 GRIB 作为详情页按需能力，不会阻塞首页。GFS 负责全球主剖面，ECMWF Open Data 用于交叉验证；HRRR 仅覆盖北美，不用于南京等中国城市。
+
+## 启用 GFS / ECMWF 压力层剖面
+
+完整依赖安装后，用以下方式启动 FastAPI 服务：
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+ENABLE_GRIB_PROFILE=1 python -m backend.api
+```
+
+进入“预测依据”页时，后端会沿太阳方位生成 0—600 km、间隔 50 km 的 13 个采样点。主模型使用 NOAA GFS 0.25° 的 1000、925、850、700、500、300、200 hPa 压力层；ECMWF IFS Open Data 0.25° 用作湿度剖面对照。GRIB 与解析结果缓存 6 小时，建议为本地缓存预留 5—10 GB。
+
+首次进入详情页可能需要数分钟下载。若依赖、网络或模式时次不可用，`/api/profile` 会返回 `available: false`，详情页继续显示 Open-Meteo 示意剖面，不影响三日预测。
 
 ## 目录
 

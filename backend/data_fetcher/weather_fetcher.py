@@ -9,7 +9,7 @@ import math
 import os
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -49,7 +49,7 @@ class WeatherDataFetcher:
         return self._build_mock_data(lat, lon)
 
     @staticmethod
-    def _read_cache(path: Path) -> list[dict[str, Any]] | None:
+    def _read_cache(path: Path) -> Optional[list[dict[str, Any]]]:
         if not path.exists():
             return None
         try:
@@ -60,7 +60,7 @@ class WeatherDataFetcher:
             return None
 
     @staticmethod
-    def _get_json(url: str, params: dict[str, str | int | float]) -> Any:
+    def _get_json(url: str, params: dict[str, Union[str, int, float]]) -> Any:
         request = Request(f"{url}?{urlencode(params)}", headers={"User-Agent": "XiaGuangForecast/1.0"})
         with urlopen(request, timeout=15) as response:  # noqa: S310 - 地址为代码内固定 HTTPS 域名
             return json.loads(response.read().decode("utf-8"))

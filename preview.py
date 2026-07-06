@@ -51,6 +51,8 @@ class PreviewHandler(BaseHTTPRequestHandler):
             })
         if parsed.path == "/api/health":
             return self._json({"status": "ok", "message": "零依赖预览服务运行正常"})
+        if parsed.path == "/api/profile":
+            return self._json({"available": False, "reason": "零依赖预览服务未启用 GRIB；请使用 FastAPI 完整服务。", "distance_km": 600, "step_km": 50})
         static_map = {
             "/": "index.html", "/style.css": "style.css", "/script.js": "script.js",
             "/forecast-detail.html": "forecast-detail.html", "/forecast-detail.css": "forecast-detail.css",

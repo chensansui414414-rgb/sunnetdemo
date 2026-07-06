@@ -54,12 +54,12 @@
       </div>
       <div class="chart-card">
         <div class="chart-meta">
-          <div><span id="chartDirection">日落方向</span><strong>150KM 光路示意剖面</strong></div>
+          <div><span id="chartDirection">日落方向</span><strong id="chartRange">600KM 压力层剖面</strong></div>
           <div><strong id="chartAzimuth">—</strong><span id="chartDirectionText">—</span></div>
         </div>
         <div class="chart-wrap" id="chartWrap" aria-label="太阳光路和云层高度示意图"></div>
         <div class="chart-legend"><span><i class="high"></i>高云画布</span><span><i class="mid"></i>中云</span><span><i class="low"></i>低云遮挡</span><span><i class="ray"></i>太阳光路</span></div>
-        <p class="chart-note">剖面由目标点及太阳方向约 150 km 的模式格点生成，用于解释光路关系，不代表逐公里雷达扫描。</p>
+        <p class="chart-note" id="chartNote">正在检查 GFS / ECMWF 压力层数据；不可用时将显示 Open-Meteo 示意剖面。</p>
       </div>
     </section>
 
