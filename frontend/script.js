@@ -42,18 +42,13 @@ function renderCards(days) {
       <div class="card-top"><span class="card-date">${formatDate(day.date, index)}</span><span class="weather-icon" aria-hidden="true"></span></div>
       <p class="card-score">${day.score}<small> / 100</small></p>
       <p class="card-level">${day.level}</p><p class="card-summary">${day.summary}</p>
-      <button class="detail-toggle" type="button" aria-expanded="false">查看预测依据 <span>＋</span></button>
-      <div class="card-details"><div>
-        ${metric("光照通道", day.metrics.light_channel, "%")}
-        ${metric("中高层云", day.metrics.high_cloud, "%")}
-        ${metric("能见度", day.metrics.visibility, " km", 35)}
-        ${metric("云底高度", Math.round(day.metrics.cloud_base / 1000 * 10) / 10, " km", 10)}
-      </div></div>
+      <button class="detail-toggle" type="button" data-index="${index}">查看预测依据 <span>↗</span></button>
     </article>`).join("");
   document.querySelectorAll(".detail-toggle").forEach((button) => button.addEventListener("click", () => {
-    const card = button.closest(".forecast-card");
-    card.classList.toggle("expanded");
-    button.setAttribute("aria-expanded", card.classList.contains("expanded"));
+    const index = Number(button.dataset.index); const day = state.days[index];
+    try { sessionStorage.setItem("xiaForecastDetail", JSON.stringify({ day, index, lat: state.lat, lon: state.lon, city: state.city, period: state.period })); } catch (_) { /* 文件预览环境可能禁用存储。 */ }
+    const params = new URLSearchParams({ date: day.date, index, lat: state.lat, lon: state.lon, city: state.city, period: state.period, score: day.score, level: day.level });
+    window.location.href = `forecast-detail.html?${params}`;
   }));
 }
 

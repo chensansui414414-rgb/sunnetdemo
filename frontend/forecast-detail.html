@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="霞光预测物理依据：太阳方位、光路遮挡与分层云量">
+  <title>预测依据｜霞光时刻</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="forecast-detail.css">
+</head>
+<body>
+  <header class="detail-header">
+    <a class="back-link" href="index.html#forecast" aria-label="返回三日预测"><span>←</span> 三日预测</a>
+    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span>霞光时刻</a>
+    <span class="header-place" id="headerPlace">南京</span>
+  </header>
+
+  <main>
+    <section class="detail-hero">
+      <div class="detail-title">
+        <p class="eyebrow"><span id="detailDate">—</span><span id="detailPeriod">晚霞预测依据</span></p>
+        <h1>为什么是<br><em id="detailLevel">—</em>？</h1>
+      </div>
+      <div class="detail-verdict">
+        <p class="score"><span id="detailScore">—</span><small>/ 100</small></p>
+        <p id="detailSummary">正在还原太阳光路与云层画布。</p>
+        <span class="source-badge" id="sourceBadge">数据准备中</span>
+      </div>
+    </section>
+
+    <section class="solar-section" aria-labelledby="solarHeading">
+      <div class="section-head"><p>01 / 太阳几何</p><h2 id="solarHeading">光从哪里来？</h2></div>
+      <div class="solar-grid">
+        <article class="solar-card morning" id="morningCard">
+          <div class="solar-label"><span class="sun-icon"></span><span>日出</span></div>
+          <strong id="sunriseTime">—</strong>
+          <p>方位角 <span id="sunriseAzimuth">—</span> · <span id="sunriseDirection">—</span></p>
+        </article>
+        <article class="solar-card evening active" id="eveningCard">
+          <div class="solar-label"><span class="sun-icon"></span><span>日落</span></div>
+          <strong id="sunsetTime">—</strong>
+          <p>方位角 <span id="sunsetAzimuth">—</span> · <span id="sunsetDirection">—</span></p>
+        </article>
+      </div>
+    </section>
+
+    <section class="profile-section" aria-labelledby="profileHeading">
+      <div class="section-head profile-head"><p>02 / 光路剖面</p><h2 id="profileHeading">太阳和云，在哪里相遇？</h2><span>示意图 · 非雷达实况</span></div>
+      <div class="profile-tabs" role="tablist" aria-label="选择光路剖面">
+        <button type="button" role="tab" data-period="morning" aria-selected="false"><span>☀</span> 朝霞剖面</button>
+        <button type="button" role="tab" data-period="evening" aria-selected="true"><span>◧</span> 晚霞剖面</button>
+      </div>
+      <div class="chart-card">
+        <div class="chart-meta">
+          <div><span id="chartDirection">日落方向</span><strong>150KM 光路示意剖面</strong></div>
+          <div><strong id="chartAzimuth">—</strong><span id="chartDirectionText">—</span></div>
+        </div>
+        <div class="chart-wrap" id="chartWrap" aria-label="太阳光路和云层高度示意图"></div>
+        <div class="chart-legend"><span><i class="high"></i>高云画布</span><span><i class="mid"></i>中云</span><span><i class="low"></i>低云遮挡</span><span><i class="ray"></i>太阳光路</span></div>
+        <p class="chart-note">剖面由目标点及太阳方向约 150 km 的模式格点生成，用于解释光路关系，不代表逐公里雷达扫描。</p>
+      </div>
+    </section>
+
+    <section class="metrics-section" aria-labelledby="metricsHeading">
+      <div class="section-head"><p>03 / 关键读数</p><h2 id="metricsHeading">决定这次霞光的四件事。</h2></div>
+      <div class="metric-grid" id="metricGrid"></div>
+      <article class="explanation-card">
+        <p>物理结论</p><h3 id="physicalConclusion">—</h3>
+        <div><span>光照通道 × 云层画布</span><strong id="formulaResult">—</strong></div>
+      </article>
+    </section>
+  </main>
+
+  <footer><a class="back-link" href="index.html#forecast">← 返回三日预测</a><span>Open-Meteo / CAMS · 模式预报存在不确定性</span></footer>
+  <script src="forecast-detail.js" defer></script>
+</body>
+</html>

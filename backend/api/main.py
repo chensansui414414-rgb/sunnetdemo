@@ -108,4 +108,19 @@ def javascript() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "script.js", media_type="text/javascript")
 
 
+@app.get("/forecast-detail.html", include_in_schema=False)
+def forecast_detail() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "forecast-detail.html")
+
+
+@app.get("/forecast-detail.css", include_in_schema=False)
+def forecast_detail_stylesheet() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "forecast-detail.css", media_type="text/css")
+
+
+@app.get("/forecast-detail.js", include_in_schema=False)
+def forecast_detail_javascript() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "forecast-detail.js", media_type="text/javascript")
+
+
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")

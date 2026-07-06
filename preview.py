@@ -51,7 +51,11 @@ class PreviewHandler(BaseHTTPRequestHandler):
             })
         if parsed.path == "/api/health":
             return self._json({"status": "ok", "message": "零依赖预览服务运行正常"})
-        static_map = {"/": "index.html", "/style.css": "style.css", "/script.js": "script.js", "/static/style.css": "style.css", "/static/script.js": "script.js"}
+        static_map = {
+            "/": "index.html", "/style.css": "style.css", "/script.js": "script.js",
+            "/forecast-detail.html": "forecast-detail.html", "/forecast-detail.css": "forecast-detail.css",
+            "/forecast-detail.js": "forecast-detail.js", "/static/style.css": "style.css", "/static/script.js": "script.js",
+        }
         filename = static_map.get(parsed.path)
         if not filename:
             return self.send_error(404, "页面不存在")

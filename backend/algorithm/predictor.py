@@ -105,9 +105,13 @@ def predict_day(raw: dict[str, Any], lat: float, lon: float, period: str = "even
         "period": period,
         "metrics": {
             "high_cloud": raw["high_cloud_cover"],
+            "mid_cloud": raw["mid_cloud_cover"],
             "low_cloud": raw["low_cloud_cover"],
             "visibility": raw["visibility_km"],
             "aod": raw["aod"],
+            "pm2_5": raw.get("pm2_5"),
+            "direct_radiation": raw.get("direct_radiation"),
+            "corridor_low_cloud": raw.get("east_low_cloud_cover" if period == "morning" else "west_low_cloud_cover", raw["low_cloud_cover"]),
             "cloud_base": raw["cloud_base_m"],
             "optical_depth": optical["optical_depth"],
             "light_channel": round(transmission * 100),
