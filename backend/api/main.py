@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import uuid
 from datetime import date
 from pathlib import Path
 from typing import Literal, Union
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from backend.algorithm.predictor import calculate_sun_position, predict_three_days
+from backend.data_fetcher.city_search import CitySearchService
 from backend.data_fetcher.grib_profile import PressureProfileFetcher
-from backend.data_fetcher.weather_fetcher import WeatherDataFetcher
+from backend.data_fetcher.weather_fetcher import RealDataUnavailableError, WeatherDataFetcher
 from backend.storage.repository import Repository
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +32,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 fetcher = WeatherDataFetcher(DATA_DIR / "cache")
 repository = Repository(DATA_DIR / "forecast.db")
 profile_fetcher = PressureProfileFetcher(DATA_DIR / "cache" / "profiles")
+city_search = CitySearchService()
 
 
 class FeedbackBody(BaseModel):
@@ -48,17 +51,43 @@ def health() -> dict[str, str]:
     return {"status": "ok", "message": "霞光预测服务运行正常"}
 
 
+@app.get("/api/cities")
+def cities(query: str = Query(default="", max_length=60), limit: int = Query(default=30, ge=1, le=50)) -> dict:
+    """搜索大陆地级行政区与港澳台县市；空查询返回热门城市。"""
+    if query and len(query.strip()) < 2:
+        return {"cities": [], "query": query, "fallback": False, "message": "请至少输入两个字"}
+    rows, fallback = city_search.search(query, limit)
+    return {
+        "cities": rows,
+        "query": query,
+        "fallback": fallback,
+        "coverage": "中国大陆地级市、自治州、地区、盟，以及香港、澳门、台湾县市",
+    }
+
+
 @app.get("/api/forecast")
 def forecast(lat: float = 32.0603, lon: float = 118.7969, period: Literal["morning", "evening"] = "evening") -> dict:
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(status_code=422, detail="经纬度超出有效范围")
-    rows = fetcher.fetch_three_days(lat, lon)
+    try:
+        rows = fetcher.fetch_three_days(lat, lon)
+    except RealDataUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": str(exc),
+                "strict_real_data": True,
+                "data_source": "Open-Meteo / CAMS 实时预报",
+                "suggestion": "请检查网络、上游接口或关闭 STRICT_REAL_DATA 后再使用演示数据。",
+            },
+        ) from exc
     result = predict_three_days(rows, lat, lon, period)
     repository.save_forecast(lat, lon, result)
     is_mock = any(day["source"].startswith("mock") for day in result)
     return {
         "location": {"lat": lat, "lon": lon, "name": "当前坐标"}, "period": period,
         "days": result, "is_mock": is_mock, "is_stale": any(day.get("is_stale") for day in result),
+        "strict_real_data": os.getenv("STRICT_REAL_DATA", "0") == "1",
         "data_source": result[0].get("source_label"), "fetched_at": result[0].get("fetched_at"),
         "stats": repository.stats(),
     }

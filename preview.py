@@ -8,13 +8,15 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from backend.algorithm.predictor import predict_three_days
-from backend.data_fetcher.weather_fetcher import WeatherDataFetcher
+from backend.data_fetcher.city_search import CitySearchService
+from backend.data_fetcher.weather_fetcher import RealDataUnavailableError, WeatherDataFetcher
 from backend.storage.repository import Repository
 
 ROOT = Path(__file__).parent
 FRONTEND = ROOT / "frontend"
 fetcher = WeatherDataFetcher(ROOT / "data" / "cache")
 repository = Repository(ROOT / "data" / "forecast.db")
+city_search = CitySearchService()
 
 
 class PreviewHandler(BaseHTTPRequestHandler):
@@ -40,7 +42,18 @@ class PreviewHandler(BaseHTTPRequestHandler):
                     raise ValueError
             except ValueError:
                 return self._json({"detail": "经纬度格式不正确"}, 422)
-            days = predict_three_days(fetcher.fetch_three_days(lat, lon), lat, lon, period)
+            try:
+                rows = fetcher.fetch_three_days(lat, lon)
+            except RealDataUnavailableError as exc:
+                return self._json({
+                    "detail": {
+                        "message": str(exc),
+                        "strict_real_data": True,
+                        "data_source": "Open-Meteo / CAMS 实时预报",
+                        "suggestion": "请检查网络、上游接口或关闭 STRICT_REAL_DATA 后再使用演示数据。",
+                    }
+                }, 503)
+            days = predict_three_days(rows, lat, lon, period)
             repository.save_forecast(lat, lon, days)
             is_mock = any(day["source"].startswith("mock") for day in days)
             return self._json({
@@ -51,6 +64,15 @@ class PreviewHandler(BaseHTTPRequestHandler):
             })
         if parsed.path == "/api/health":
             return self._json({"status": "ok", "message": "零依赖预览服务运行正常"})
+        if parsed.path == "/api/cities":
+            query = parse_qs(parsed.query).get("query", [""])[0]
+            if query and len(query.strip()) < 2:
+                return self._json({"cities": [], "query": query, "fallback": False, "message": "请至少输入两个字"})
+            rows, fallback = city_search.search(query)
+            return self._json({
+                "cities": rows, "query": query, "fallback": fallback,
+                "coverage": "中国大陆地级市、自治州、地区、盟，以及香港、澳门、台湾县市",
+            })
         if parsed.path == "/api/profile":
             return self._json({"available": False, "reason": "零依赖预览服务未启用 GRIB；请使用 FastAPI 完整服务。", "distance_km": 600, "step_km": 50})
         static_map = {

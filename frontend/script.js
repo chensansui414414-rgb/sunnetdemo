@@ -1,16 +1,25 @@
 // 页面状态集中管理；定位失败时以南京作为友好回退。
 const state = { lat: 32.0603, lon: 118.7969, city: "南京", period: "evening", days: [] };
 const el = (selector) => document.querySelector(selector);
-const cities = [
-  ["北京", 39.9042, 116.4074, "华北"], ["上海", 31.2304, 121.4737, "华东"],
-  ["广州", 23.1291, 113.2644, "华南"], ["深圳", 22.5431, 114.0579, "华南"],
-  ["杭州", 30.2741, 120.1551, "华东"], ["南京", 32.0603, 118.7969, "华东"],
-  ["成都", 30.5728, 104.0668, "西南"], ["重庆", 29.5630, 106.5516, "西南"],
-  ["武汉", 30.5928, 114.3055, "华中"], ["西安", 34.3416, 108.9398, "西北"],
-  ["长沙", 28.2282, 112.9388, "华中"], ["厦门", 24.4798, 118.0894, "华南"],
-  ["青岛", 36.0671, 120.3826, "华北"], ["昆明", 25.0389, 102.7183, "西南"],
-  ["三亚", 18.2528, 109.5119, "华南"], ["拉萨", 29.6520, 91.1721, "西南"]
+const popularCities = [
+  { name: "北京", lat: 39.9042, lon: 116.4074, province: "北京市" },
+  { name: "上海", lat: 31.2304, lon: 121.4737, province: "上海市" },
+  { name: "广州", lat: 23.1291, lon: 113.2644, province: "广东省" },
+  { name: "深圳", lat: 22.5431, lon: 114.0579, province: "广东省" },
+  { name: "杭州", lat: 30.2741, lon: 120.1551, province: "浙江省" },
+  { name: "南京", lat: 32.0603, lon: 118.7969, province: "江苏省" },
+  { name: "成都", lat: 30.5728, lon: 104.0668, province: "四川省" },
+  { name: "重庆", lat: 29.5630, lon: 106.5516, province: "重庆市" },
+  { name: "武汉", lat: 30.5928, lon: 114.3055, province: "湖北省" },
+  { name: "西安", lat: 34.3416, lon: 108.9398, province: "陕西省" },
+  { name: "香港", lat: 22.3193, lon: 114.1694, province: "香港特别行政区" },
+  { name: "澳门", lat: 22.1987, lon: 113.5439, province: "澳门特别行政区" },
+  { name: "台北", lat: 25.0330, lon: 121.5654, province: "台湾地区" },
+  { name: "高雄", lat: 22.6273, lon: 120.3014, province: "台湾地区" }
 ];
+let citySearchTimer;
+let citySearchVersion = 0;
+let citySearchController;
 
 function updateLocationUI() {
   el("#locationName").textContent = state.city;
@@ -62,10 +71,41 @@ function animateNumber(node, target, duration = 900) {
   requestAnimationFrame(tick);
 }
 
+function renderRealDataUnavailable(detail = {}) {
+  const message = detail.message || "真实天气数据暂时不可用。";
+  state.days = [];
+  el("#forecastGrid").innerHTML = `
+    <article class="forecast-card active unavailable-card">
+      <div class="card-top"><span class="card-date">真实数据不可用</span><span class="weather-icon" aria-hidden="true"></span></div>
+      <p class="card-score">--<small> / 100</small></p>
+      <p class="card-level">请稍后重试</p>
+      <p class="card-summary">${escapeHtml(message)}严格真实数据模式下不会展示模拟预测，避免把演示数据误认为真实预报。</p>
+      <button class="detail-toggle" type="button" disabled>等待真实数据</button>
+    </article>`;
+  el("#heroScore").textContent = "--";
+  el("#heroLevel").textContent = "真实数据暂不可用";
+  el("#heroSummary").textContent = message;
+  el("#dataNotice").textContent = `严格真实数据模式 · ${detail.data_source || "Open-Meteo / CAMS"} 暂不可用`;
+  initCounters();
+}
+
 async function loadForecast() {
   try {
     const response = await fetch(`/api/forecast?lat=${state.lat}&lon=${state.lon}&period=${state.period}`);
-    if (!response.ok) throw new Error("接口返回异常");
+    if (!response.ok) {
+      let detail = {};
+      try {
+        const payload = await response.json();
+        detail = typeof payload.detail === "object" ? payload.detail : { message: payload.detail };
+      } catch (_) {
+        detail = { message: "接口返回异常" };
+      }
+      if (detail.strict_real_data) {
+        renderRealDataUnavailable(detail);
+        return;
+      }
+      throw new Error(detail.message || "接口返回异常");
+    }
     const data = await response.json(); state.days = data.days; renderCards(data.days);
     animateNumber(el("#heroScore"), data.days[0].score);
     el("#heroLevel").textContent = data.days[0].level;
@@ -76,6 +116,9 @@ async function loadForecast() {
       el("#dataNotice").textContent = "演示模式 · 当前展示确定性模拟气象数据";
     } else if (data.is_stale) {
       el("#dataNotice").textContent = `缓存模式 · ${data.data_source || "Open-Meteo"} 暂时不可用，正在使用最近一次真实预报`;
+    } else if (data.strict_real_data) {
+      const time = data.fetched_at ? new Date(data.fetched_at).toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "刚刚";
+      el("#dataNotice").textContent = `严格真实数据 · ${data.data_source || "Open-Meteo / CAMS"} · ${time} 更新`;
     } else {
       const time = data.fetched_at ? new Date(data.fetched_at).toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "刚刚";
       el("#dataNotice").textContent = `实时模式 · ${data.data_source || "Open-Meteo / CAMS"} · ${time} 更新`;
@@ -118,17 +161,13 @@ function initCounters() {
   }); observer.observe(stats);
 }
 
-function nearestCity(lat, lon) {
-  const ordered = cities.map((city) => ({ city, distance: Math.hypot(city[1] - lat, (city[2] - lon) * Math.cos(lat * Math.PI / 180)) })).sort((a, b) => a.distance - b.distance);
-  return ordered[0].distance < 1.2 ? ordered[0].city[0] : "当前位置";
-}
-
 function useCurrentLocation(silent = false) {
   if (!navigator.geolocation) { state.city = "南京"; updateLocationUI(); loadForecast(); return; }
   if (!silent) el("#currentLocationButton").querySelector("strong").textContent = "正在定位…";
   navigator.geolocation.getCurrentPosition((position) => {
     state.lat = position.coords.latitude; state.lon = position.coords.longitude;
-    state.city = nearestCity(state.lat, state.lon); updateLocationUI();
+    // 浏览器只返回坐标；不使用少量城市做不准确的反向猜测。
+    state.city = "当前位置"; updateLocationUI();
     el("#currentLocationButton").querySelector("strong").textContent = "使用当前位置";
     el("#cityDialog").close(); loadForecast();
   }, () => {
@@ -138,27 +177,81 @@ function useCurrentLocation(silent = false) {
   }, { enableHighAccuracy: false, timeout: 7000, maximumAge: 600000 });
 }
 
-function renderCityList(keyword = "") {
-  const normalized = keyword.trim().toLowerCase();
-  const matched = cities.filter((city) => !normalized || city[0].includes(normalized) || city[3].includes(normalized));
-  el("#cityList").innerHTML = matched.length ? matched.map((city) => `<button class="city-option" type="button" data-city="${city[0]}"><strong>${city[0]}</strong><small>${city[3]} · ${city[1].toFixed(2)}°N</small></button>`).join("") : `<p class="city-empty">暂未找到这个城市</p>`;
-  document.querySelectorAll(".city-option").forEach((button) => button.addEventListener("click", () => {
-    const city = cities.find((item) => item[0] === button.dataset.city);
-    [state.city, state.lat, state.lon] = [city[0], city[1], city[2]];
-    updateLocationUI(); el("#cityDialog").close(); loadForecast();
-  }));
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+}
+
+function renderCityResults(cities, message = "") {
+  const list = el("#cityList");
+  if (!cities.length) {
+    list.innerHTML = `<p class="city-empty">${escapeHtml(message || "暂未找到，请尝试完整城市名")}</p>`;
+    return;
+  }
+  list.innerHTML = cities.map((city) => {
+    const secondary = [city.province, city.prefecture && city.prefecture !== city.name ? city.prefecture : ""].filter(Boolean).join(" · ");
+    return `<button class="city-option" type="button" data-city="${escapeHtml(city.name)}" data-lat="${Number(city.lat)}" data-lon="${Number(city.lon)}"><strong>${escapeHtml(city.name)}</strong><small>${escapeHtml(secondary || city.region || "中国")}</small></button>`;
+  }).join("");
+}
+
+async function searchCities(keyword = "") {
+  const query = keyword.trim();
+  const hint = el("#citySearchHint");
+  const requestVersion = ++citySearchVersion;
+  if (!query) {
+    hint.textContent = "输入至少两个字搜索全国；下方为热门城市";
+    renderCityResults(popularCities);
+    return;
+  }
+  if (query.length < 2) {
+    hint.textContent = "再输入一个字即可搜索全国";
+    renderCityResults([], "请至少输入两个字");
+    return;
+  }
+
+  hint.textContent = `正在搜索“${query}”…`;
+  el("#cityList").innerHTML = `<p class="city-empty city-loading">正在查询全国城市库</p>`;
+  citySearchController?.abort();
+  citySearchController = new AbortController();
+  const timeout = setTimeout(() => citySearchController.abort(), 9000);
+  try {
+    const response = await fetch(`/api/cities?query=${encodeURIComponent(query)}&limit=30`, { signal: citySearchController.signal });
+    if (!response.ok) throw new Error("城市接口返回异常");
+    const data = await response.json();
+    if (requestVersion !== citySearchVersion) return;
+    hint.textContent = data.fallback ? "城市服务暂时离线，仅显示本地匹配" : `找到 ${data.cities.length} 个相关地点`;
+    renderCityResults(data.cities, `没有找到“${query}”，请尝试完整名称`);
+  } catch (_) {
+    if (requestVersion !== citySearchVersion) return;
+    const fallback = popularCities.filter((city) => city.name.includes(query) || city.province.includes(query));
+    hint.textContent = "城市服务暂时离线；已切换为热门城市匹配";
+    renderCityResults(fallback, "离线列表中没有该城市，启动后端后可搜索全国");
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function initLocation() {
   const dialog = el("#cityDialog");
   const open = () => {
     if (el("#menuButton").getAttribute("aria-expanded") === "true") el("#menuButton").click();
-    renderCityList(); el("#citySearch").value = ""; dialog.showModal();
+    searchCities(); el("#citySearch").value = ""; dialog.showModal();
+    setTimeout(() => el("#citySearch").focus(), 50);
   };
   el("#locateButton").addEventListener("click", open); el("#mobileLocation").addEventListener("click", open);
   el("#closeCityDialog").addEventListener("click", () => dialog.close());
   el("#currentLocationButton").addEventListener("click", () => useCurrentLocation(false));
-  el("#citySearch").addEventListener("input", (event) => renderCityList(event.target.value));
+  el("#citySearch").addEventListener("input", (event) => {
+    clearTimeout(citySearchTimer);
+    const keyword = event.target.value;
+    citySearchTimer = setTimeout(() => searchCities(keyword), 280);
+  });
+  el("#cityList").addEventListener("click", (event) => {
+    const button = event.target.closest(".city-option");
+    if (!button) return;
+    state.city = button.dataset.city;
+    state.lat = Number(button.dataset.lat); state.lon = Number(button.dataset.lon);
+    updateLocationUI(); dialog.close(); loadForecast();
+  });
   updateLocationUI(); useCurrentLocation(true);
 }
 

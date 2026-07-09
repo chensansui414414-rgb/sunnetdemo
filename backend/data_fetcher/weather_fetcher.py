@@ -18,6 +18,10 @@ WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 AIR_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 
+class RealDataUnavailableError(RuntimeError):
+    """严格真实数据模式下，真实数据与真实缓存都不可用。"""
+
+
 class WeatherDataFetcher:
     """获取并标准化真实天气数据；不依赖 requests 等第三方网络库。"""
 
@@ -29,6 +33,7 @@ class WeatherDataFetcher:
         """优先读取三小时内缓存，否则请求真实数据；异常时安全降级。"""
         cache_file = self.cache_dir / f"openmeteo_v1_{lat:.2f}_{lon:.2f}_{date.today().isoformat()}.json"
         cached = self._read_cache(cache_file)
+        strict_real_data = os.getenv("STRICT_REAL_DATA", "0") == "1"
         if cached and datetime.now().timestamp() - cache_file.stat().st_mtime < 3 * 3600:
             return cached
 
@@ -45,6 +50,8 @@ class WeatherDataFetcher:
             for row in cached:
                 row["is_stale"] = True
             return cached
+        if strict_real_data:
+            raise RealDataUnavailableError("严格真实数据模式已开启，但实时天气接口和本地真实缓存均不可用。")
         logger.warning("真实数据和缓存均不可用，使用确定性模拟数据。")
         return self._build_mock_data(lat, lon)
 

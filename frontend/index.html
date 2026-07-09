@@ -120,7 +120,9 @@
     <div class="city-panel">
       <div class="dialog-head"><div><p class="section-index">选择地点</p><h2>去哪里看天空？</h2></div><button id="closeCityDialog" type="button" aria-label="关闭">×</button></div>
       <button class="current-location-button" id="currentLocationButton" type="button"><span class="location-dot"></span><span><strong>使用当前位置</strong><small>自动读取设备定位</small></span><b>↗</b></button>
-      <label class="city-search"><span class="sr-only">搜索城市</span><input id="citySearch" type="search" placeholder="搜索城市，例如：杭州" autocomplete="off"></label>
+      <div class="city-scope" aria-label="支持地区"><span>大陆地级市</span><span>港澳</span><span>台湾县市</span></div>
+      <label class="city-search"><span class="sr-only">搜索城市</span><input id="citySearch" type="search" placeholder="搜索城市、自治州、地区或盟" autocomplete="off"></label>
+      <p class="city-search-hint" id="citySearchHint">输入至少两个字搜索全国；下方为热门城市</p>
       <div class="city-list" id="cityList" aria-live="polite"></div>
     </div>
   </dialog>
