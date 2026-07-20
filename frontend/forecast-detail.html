@@ -12,8 +12,8 @@
 </head>
 <body>
   <header class="detail-header">
-    <a class="back-link" href="index.html#forecast" aria-label="返回三日预测"><span>←</span> 三日预测</a>
-    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span>霞光时刻</a>
+    <a class="back-link" href="/#forecast" aria-label="返回三日预测"><span>←</span> 三日预测</a>
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>霞光时刻</a>
     <span class="header-place" id="headerPlace">南京</span>
   </header>
 
@@ -61,10 +61,30 @@
         <div class="chart-legend"><span><i class="high"></i>高云画布</span><span><i class="mid"></i>中云</span><span><i class="low"></i>低云遮挡</span><span><i class="ray"></i>太阳光路</span></div>
         <p class="chart-note" id="chartNote">正在检查 GFS / ECMWF 压力层数据；不可用时将显示 Open-Meteo 示意剖面。</p>
       </div>
+      <div class="aerosol-panel" aria-labelledby="aerosolHeading">
+        <div class="aerosol-panel-head">
+          <p>03 / 气溶胶与霞光时序</p>
+          <h3 id="aerosolHeading">把图二里的关键读数，放到这里。</h3>
+        </div>
+        <div class="aerosol-layout">
+          <article class="aerosol-chart-card">
+            <div class="mini-chart-title">本地 550nm 气溶胶消光系数垂直分布</div>
+            <div class="mini-chart" id="aodProfileChart"></div>
+          </article>
+          <article class="aerosol-readout">
+            <dl id="aerosolReadout"></dl>
+            <div class="cloud-family"><span>本地云属</span><strong id="localCloudType">—</strong></div>
+          </article>
+          <article class="twilight-chart-card">
+            <div class="mini-chart-title">霞光时序</div>
+            <div class="mini-chart" id="twilightChart"></div>
+          </article>
+        </div>
+      </div>
     </section>
 
     <section class="metrics-section" aria-labelledby="metricsHeading">
-      <div class="section-head"><p>03 / 关键读数</p><h2 id="metricsHeading">决定这次霞光的四件事。</h2></div>
+      <div class="section-head"><p>04 / 关键读数</p><h2 id="metricsHeading">决定这次霞光的四件事。</h2></div>
       <div class="metric-grid" id="metricGrid"></div>
       <article class="explanation-card">
         <p>物理结论</p><h3 id="physicalConclusion">—</h3>
@@ -73,7 +93,7 @@
     </section>
   </main>
 
-  <footer><a class="back-link" href="index.html#forecast">← 返回三日预测</a><span>Open-Meteo / CAMS · 模式预报存在不确定性</span></footer>
+  <footer><a class="back-link" href="/#forecast">← 返回三日预测</a><span>Open-Meteo / CAMS · 模式预报存在不确定性</span></footer>
   <script src="forecast-detail.js" defer></script>
 </body>
 </html>

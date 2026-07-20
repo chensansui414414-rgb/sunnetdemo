@@ -32,6 +32,18 @@ STRICT_REAL_DATA=1 USE_OPEN_METEO=1 python -m backend.api
 
 开启后，如果 Open-Meteo / CAMS 请求失败且本地没有可用真实缓存，`/api/forecast` 会返回 `503`，前端会显示“真实数据暂不可用”，不会再展示 Mock 分数。
 
+## 当前算法优化点
+
+当前评分不是只读取日出/日落单个整点，而是额外检查日出/日落前后约 1.5 小时窗口：
+
+- 使用窗口内太阳方向低云最大值，降低“整点看起来通透、实际云墙遮挡”的误判。
+- 使用本地低云最大值，降低低云/雾幕导致的假高分。
+- 使用窗口内高云画布均值与波动，降低云量快速变化时的假确定性。
+- 纳入降水量和降水概率，雨幕或湿低云会压低光路通透度。
+- 使用日落前或日出后的直接辐射作为“供光”门控，避免有云但没有足够光源时给高分。
+
+这些优化会让系统更保守：宁愿少报一点“大烧/小烧”，也尽量减少让用户白跑的假阳性。
+
 ## 接口
 
 - `GET /api/forecast?lat=32.0603&lon=118.7969&period=evening`：未来三天预测；`period` 可选 `morning`（朝霞）或 `evening`（晚霞）。
@@ -46,7 +58,7 @@ pip install -r requirements.txt
 ENABLE_REAL_WEATHER=1 python -m backend.api
 ```
 
-基础预报默认使用 Open-Meteo / CAMS；压力层 GRIB 作为详情页按需能力，不会阻塞首页。GFS 负责全球主剖面，ECMWF Open Data 用于交叉验证；HRRR 仅覆盖北美，不用于南京等中国城市。
+基础预报默认使用 Open-Meteo / CAMS。开启 `ENABLE_GRIB_PROFILE=1` 后，GFS / ECMWF 压力层剖面会正式参与首页三日评分；未开启时保持轻量 Open-Meteo 模式。GFS 负责全球主剖面，ECMWF Open Data 用于交叉验证；HRRR 仅覆盖北美，不用于南京等中国城市。
 
 ## 启用 GFS / ECMWF 压力层剖面
 
@@ -58,9 +70,9 @@ pip install -r requirements.txt
 ENABLE_GRIB_PROFILE=1 python -m backend.api
 ```
 
-进入“预测依据”页时，后端会沿太阳方位生成 0—600 km、间隔 50 km 的 13 个采样点。主模型使用 NOAA GFS 0.25° 的 1000、925、850、700、500、300、200 hPa 压力层；ECMWF IFS Open Data 0.25° 用作湿度剖面对照。GRIB 与解析结果缓存 6 小时，建议为本地缓存预留 5—10 GB。
+开启后，`/api/forecast` 与“预测依据”页都会沿太阳方位生成 0—600 km、间隔 50 km 的 13 个采样点。主模型使用 NOAA GFS 0.25° 的 1000、925、850、700、500、300、200 hPa 压力层；ECMWF IFS Open Data 0.25° 用作湿度剖面对照。GRIB 与解析结果缓存 6 小时，建议为本地缓存预留 5—10 GB。
 
-首次进入详情页可能需要数分钟下载。若依赖、网络或模式时次不可用，`/api/profile` 会返回 `available: false`，详情页继续显示 Open-Meteo 示意剖面，不影响三日预测。
+首次请求可能需要数分钟下载。若依赖、网络或模式时次不可用，`/api/profile` 会返回 `available: false`；`/api/forecast` 会继续使用 Open-Meteo / CAMS 真实数据评分，并在 `metrics.profile_used=false`、`metrics.profile_reason` 中说明原因。
 
 ## 目录
 

@@ -185,7 +185,7 @@ curl "http://127.0.0.1:8000/api/forecast?lat=32.0603&lon=118.7969&period=evening
       "date": "2026-07-06",
       "score": 68,
       "level": "小烧",
-      "summary": "日落西北方向光路通透；本地高云画布54%，薄云透光。结论：有机会，路过可等等。",
+      "summary": "日落西北方向光路通透；本地高云画布54%，薄云透光；剖面高云约62.4%，模型一致性高。结论：有机会，路过可等等。",
       "event_time": "2026-07-06T19:13:00+08:00",
       "sunset": "2026-07-06T19:13:00+08:00",
       "sun_azimuth": 296.8,
@@ -201,7 +201,20 @@ curl "http://127.0.0.1:8000/api/forecast?lat=32.0603&lon=118.7969&period=evening
         "corridor_low_cloud": 24,
         "cloud_base": 7200,
         "optical_depth": 3.8,
-        "light_channel": 65
+        "light_channel": 65,
+        "open_meteo_light_channel": 58,
+        "profile_used": true,
+        "profile_available": true,
+        "profile_reason": null,
+        "profile_light_channel": 71,
+        "profile_low_obstruction": 0.22,
+        "profile_canvas_quality": 74,
+        "profile_high_cloud": 62.4,
+        "profile_mid_cloud": 31.8,
+        "profile_canvas_cover": 53.8,
+        "profile_confidence": 100,
+        "profile_primary_model": "GFS 0.25°",
+        "profile_model_agreement": "高"
       },
       "source": "open-meteo:best-match+cams-global",
       "source_label": "Open-Meteo / CAMS 实时预报",
@@ -211,6 +224,8 @@ curl "http://127.0.0.1:8000/api/forecast?lat=32.0603&lon=118.7969&period=evening
   ],
   "is_mock": false,
   "is_stale": false,
+  "profile_scoring_enabled": true,
+  "profile_scoring_used": true,
   "data_source": "Open-Meteo / CAMS 实时预报",
   "fetched_at": "2026-07-06T08:00:00+00:00",
   "stats": {
@@ -241,6 +256,18 @@ curl "http://127.0.0.1:8000/api/forecast?lat=32.0603&lon=118.7969&period=evening
 | `metrics.cloud_base` | number | 估算云底高度，单位 m |
 | `metrics.optical_depth` | number | 估算云光学厚度 |
 | `metrics.light_channel` | number | 光路通透指数，0—100 |
+| `metrics.open_meteo_light_channel` | number | 仅由Open-Meteo/CAMS估算的光路通透指数 |
+| `metrics.profile_used` | boolean | 本次主评分是否实际使用GFS/ECMWF压力层剖面 |
+| `metrics.profile_available` | boolean | 压力层剖面是否可用 |
+| `metrics.profile_reason` | string/null | 压力层剖面不可用原因 |
+| `metrics.profile_light_channel` | number/null | GFS/ECMWF剖面估算的太阳方向光路通透指数 |
+| `metrics.profile_low_obstruction` | number/null | 0—1，太阳方向低层湿区/低云遮挡强度 |
+| `metrics.profile_canvas_quality` | number/null | 0—100，剖面中高层云画布质量 |
+| `metrics.profile_high_cloud` | number/null | 由高层相对湿度反推的高云画布估计，单位 `%` |
+| `metrics.profile_mid_cloud` | number/null | 由中层相对湿度反推的中云画布估计，单位 `%` |
+| `metrics.profile_confidence` | number | GFS与ECMWF一致性置信度，0—100 |
+| `metrics.profile_primary_model` | string/null | 主剖面模型名称 |
+| `metrics.profile_model_agreement` | string/null | GFS/ECMWF湿度剖面一致性，`高`/`中`/`低` |
 
 评分等级：
 
@@ -483,6 +510,8 @@ ENABLE_GRIB_PROFILE=1 USE_OPEN_METEO=1 python -m backend.api
 | `STRICT_REAL_DATA` | `0` | 设置为`1`时禁止使用Mock；真实接口和真实缓存都不可用时`/api/forecast`返回503 |
 | `ENABLE_GRIB_PROFILE` | `0` | 设置为`1`时启用GFS/ECMWF压力层下载 |
 | `ECMWF_OPEN_DATA_SOURCE` | `aws` | ECMWF开放数据下载源 |
+
+`ENABLE_GRIB_PROFILE=1` 时，`/api/forecast` 会把 0—600 km 太阳方向压力层剖面接入主评分；若GRIB依赖、网络或模式时次不可用，接口不会使用模拟剖面，而是保留 Open-Meteo / CAMS 真实评分，并通过 `metrics.profile_used=false` 和 `metrics.profile_reason` 明示降级原因。
 
 ## 11. 当前限制
 

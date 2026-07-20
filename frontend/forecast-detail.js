@@ -30,6 +30,8 @@ function formatDay(value) {
 function formatTime(value, fallback) { if (!value) return fallback; const date = new Date(value); return Number.isNaN(date.getTime()) ? value.slice(11,16) : date.toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false}); }
 function direction(azimuth) { if (azimuth < 90) return "东北"; if (azimuth < 180) return "东南"; if (azimuth < 270) return "西南"; return "西北"; }
 function safeMetric(day, key, fallback) { const value = day?.metrics?.[key]; return value === null || value === undefined ? fallback : Number(value); }
+function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+function signed(value, digits = 1) { return `${value > 0 ? "+" : ""}${Number(value).toFixed(digits)}`; }
 
 function renderHeader(day) {
   byId("headerPlace").textContent = context.city; byId("detailDate").textContent = `${context.city} · ${formatDay(context.date)}`;
@@ -49,6 +51,8 @@ function renderMetrics(day) {
   const metrics = [
     ["光照通道",safeMetric(day,"light_channel",65),"%","低云、能见度与 AOD 共同决定",100],
     ["高云画布",safeMetric(day,"high_cloud",54),"%","30%—70% 通常更适合上色",100],
+    ["窗口低云",safeMetric(day,"effective_low_cloud",safeMetric(day,"corridor_low_cloud",24)),"%","日出/日落前后低云最大遮挡",100],
+    ["降水概率",safeMetric(day,"precipitation_probability",0),"%","雨幕和湿低云会显著压低霞光",100],
     ["能见度",safeMetric(day,"visibility",18)," km","越高代表霞光传播损耗越小",35],
     ["AOD",safeMetric(day,"aod",.16),"","适量气溶胶增强色彩，过量则遮光",.6]
   ];
@@ -56,6 +60,96 @@ function renderMetrics(day) {
   const channel = safeMetric(day,"light_channel",65); const canvas = safeMetric(day,"high_cloud",54);
   byId("physicalConclusion").textContent = day.summary || "光路与画布共同决定霞光潜力。";
   byId("formulaResult").textContent = `${channel}% × ${canvas}% → ${day.score} 分`;
+}
+
+function inferCloudType(day) {
+  const high = safeMetric(day,"high_cloud",0);
+  const mid = safeMetric(day,"mid_cloud",0);
+  const low = safeMetric(day,"low_cloud",0);
+  const types = [];
+  if (high >= 55) types.push("卷云", "卷积云");
+  else if (high >= 25) types.push("薄卷云");
+  if (mid >= 45) types.push("高积云");
+  else if (mid >= 18) types.push("中云");
+  if (low >= 55) types.push("低云");
+  return types.length ? [...new Set(types)].join("、") : "云量偏少";
+}
+
+function renderAodProfileChart(day) {
+  const aod = safeMetric(day,"aod",0.16);
+  const visibility = safeMetric(day,"visibility",12);
+  const surfaceExt = clamp(aod * 1.58 + Math.max(0, 12 - visibility) * 0.018, 0.04, 0.58);
+  const width = 360, height = 360, left = 52, right = 18, top = 24, bottom = 42;
+  const chartW = width - left - right, chartH = height - top - bottom;
+  const x = (value) => left + clamp(value, 0, .6) / .6 * chartW;
+  const y = (meter) => top + (6000 - clamp(meter, 0, 6000)) / 6000 * chartH;
+  const samples = [0,500,1000,2000,3000,4000,5000,6000].map((meter) => {
+    const boundaryBoost = meter < 1200 ? 1 : .62;
+    const value = surfaceExt * boundaryBoost * Math.exp(-meter / 1550) + aod * .018;
+    return { meter, value: clamp(value, 0.01, .58) };
+  });
+  const path = samples.map((point,index) => `${index ? "L" : "M"}${x(point.value)},${y(point.meter)}`).join(" ");
+  const verticals = [.0,.2,.4,.6].map(value => `<line x1="${x(value)}" y1="${top}" x2="${x(value)}" y2="${top+chartH}" class="aod-grid"/><text x="${x(value)}" y="${height-14}" text-anchor="middle">${value.toFixed(1)}</text>`).join("");
+  const horizontals = [0,1000,2000,3000,4000,5000,6000].map(meter => `<line x1="${left}" y1="${y(meter)}" x2="${left+chartW}" y2="${y(meter)}" class="aod-grid"/><text x="${left-10}" y="${y(meter)+4}" text-anchor="end">${meter}</text>`).join("");
+  const thresholds = [
+    { value: aod + .05, meter: 3920, color: "#55d890" },
+    { value: aod + .14, meter: 2180, color: "#55d890" },
+    { value: aod + .28, meter: 1040, color: "#6f8cff" },
+  ].map(item => `<path d="M${x(item.value)-24},${y(item.meter)-5} L${x(item.value)-7},${y(item.meter)+12} L${x(item.value)+34},${y(item.meter)-30}" fill="none" stroke="${item.color}" stroke-width="4" opacity=".78"/><text x="${x(.39)}" y="${y(item.meter)-10}" fill="${item.color}">AOD↑=${item.value.toFixed(2)}</text>`).join("");
+  byId("aodProfileChart").innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="本地550nm气溶胶消光系数垂直分布"><defs><linearGradient id="aodBand" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#d8ead5" stop-opacity=".22"/><stop offset=".55" stop-color="#b4d2ba" stop-opacity=".26"/><stop offset="1" stop-color="#e7dcc9" stop-opacity=".12"/></linearGradient></defs><style>text{font:12px Inter,sans-serif;fill:#8f938f}.aod-grid{stroke:rgba(255,255,255,.13);stroke-width:1}.aod-axis{stroke:rgba(244,243,237,.7);stroke-width:1.5}.aod-curve{fill:none;stroke:#e7564e;stroke-width:3}.aod-cut{stroke:rgba(244,243,237,.62);stroke-width:2;stroke-dasharray:7 5}</style><rect x="${left}" y="${top}" width="${chartW}" height="${chartH}" fill="url(#aodBand)"/><rect x="${left}" y="${top}" width="${chartW}" height="${chartH}" fill="none" class="aod-axis"/>${verticals}${horizontals}<line x1="${x(aod)}" y1="${top}" x2="${x(aod)}" y2="${top+chartH}" class="aod-cut"/><path d="${path}" class="aod-curve"/>${thresholds}<text x="${left}" y="${height-2}" fill="#c4a064">AOD↑=${aod.toFixed(2)}</text><text x="13" y="${top+chartH/2}" transform="rotate(-90 13 ${top+chartH/2})">高度 AGL (m)</text></svg>`;
+}
+
+function renderTwilightChart(day) {
+  const score = Number(day.score || 0);
+  const channel = safeMetric(day,"light_channel",65) / 100;
+  const canvas = safeMetric(day,"high_cloud",54) / 100;
+  const vividness = Math.exp(-((safeMetric(day,"aod",.16) - .16) ** 2) / .045);
+  const peak = clamp(Math.sqrt(channel * Math.max(.04, canvas)) * vividness, .05, .92);
+  const width = 520, height = 250, left = 48, right = 18, top = 24, bottom = 38;
+  const chartW = width - left - right, chartH = height - top - bottom;
+  const x = (minute) => left + minute / 20 * chartW;
+  const y = (value) => top + (1 - clamp(value, 0, 1)) * chartH;
+  const points = Array.from({length: 41}, (_, i) => {
+    const minute = i * .5;
+    const bell = Math.exp(-((minute - 12.2) ** 2) / 18);
+    const shoulder = .24 * Math.exp(-((minute - 8.8) ** 2) / 2.8);
+    return { minute, value: clamp(peak * bell + peak * shoulder * .45, 0, .95) };
+  });
+  const area = `M${x(0)},${y(0)} ` + points.map(point => `L${x(point.minute)},${y(point.value)}`).join(" ") + ` L${x(20)},${y(0)} Z`;
+  const maxPoint = points.reduce((best, item) => item.value > best.value ? item : best, points[0]);
+  const integral = points.reduce((sum, point) => sum + point.value * .5, 0);
+  const gridX = [0,5,10,15,20].map(minute => `<line x1="${x(minute)}" y1="${top}" x2="${x(minute)}" y2="${top+chartH}" class="tw-grid"/><text x="${x(minute)}" y="${height-12}" text-anchor="middle">${minute}</text>`).join("");
+  const gridY = [.2,.4,.6,.8].map(value => `<line x1="${left}" y1="${y(value)}" x2="${left+chartW}" y2="${y(value)}" class="tw-grid"/><text x="${left-10}" y="${y(value)+4}" text-anchor="end">${value.toFixed(1)}</text>`).join("");
+  byId("twilightChart").innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="日落后霞光源始亮度时序"><defs><linearGradient id="twilightGlow" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#020202"/><stop offset=".45" stop-color="#ec790f"/><stop offset=".72" stop-color="#f05e20"/><stop offset="1" stop-color="#080808"/></linearGradient><linearGradient id="twArea" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#cf78c7" stop-opacity=".75"/><stop offset="1" stop-color="#ef655d" stop-opacity=".75"/></linearGradient></defs><style>text{font:12px Inter,sans-serif;fill:#8f938f}.tw-grid{stroke:rgba(255,255,255,.15);stroke-width:1}.tw-axis{stroke:rgba(244,243,237,.72);stroke-width:1.5}</style><rect x="${left}" y="0" width="${chartW}" height="24" fill="url(#twilightGlow)"/><rect x="${left}" y="${top}" width="${chartW}" height="${chartH}" fill="none" class="tw-axis"/>${gridX}${gridY}<path d="${area}" fill="url(#twArea)"/><text x="${x(maxPoint.minute)+8}" y="${y(maxPoint.value)-10}" fill="#7f7cff">最大=${maxPoint.value.toFixed(3)}</text><text x="${x(8.7)}" y="${y(Math.max(.08, maxPoint.value*.42))}" fill="#ff6974">饱和积分=${integral.toFixed(3)}</text><text x="12" y="${top+chartH/2}" transform="rotate(-90 12 ${top+chartH/2})">霞光源始亮度</text><text x="${left+chartW/2}" y="${height-1}" text-anchor="middle">日落后时间（分钟）</text></svg>`;
+}
+
+function renderAerosolPanel(day) {
+  renderAodProfileChart(day);
+  renderTwilightChart(day);
+  const aod = safeMetric(day,"aod",.16);
+  const high = safeMetric(day,"high_cloud",0);
+  const mid = safeMetric(day,"mid_cloud",0);
+  const corridor = safeMetric(day,"corridor_low_cloud",0);
+  const cloudBase = safeMetric(day,"cloud_base",7200);
+  const vividness = Math.exp(-((aod - .16) ** 2) / .045);
+  const hazePenalty = -Math.round((1 - Math.exp(-0.75 * aod)) * 1000) / 10;
+  const eventDate = new Date(day.event_time || `${day.date}T19:00:00+08:00`);
+  const lineSpeed = activePeriod === "morning" ? 17.9 : -17.9;
+  const rows = [
+    ["日期", day.date],
+    ["UTC+8时间", Number.isNaN(eventDate.getTime()) ? "—" : eventDate.toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false})],
+    ["海拔高度", "5 m"],
+    ["太阳方位角", `${Number(day.sun_azimuth || 0).toFixed(1)}°`],
+    ["线速度", `${signed(lineSpeed,1)} km/min`],
+    ["单层云量", `${Math.round(Math.max(high, mid) * 10) / 10}%`, "good"],
+    ["遮挡云量", `${Math.round(corridor * 10) / 10}%`, corridor <= 20 ? "good" : "bad"],
+    ["AOD-550（霾）", aod.toFixed(3), "aod"],
+    ["霾克扣", `${hazePenalty.toFixed(1)}%`],
+    ["鲜艳度（含AOD）", vividness.toFixed(3), "vivid"],
+    ["云底高度", `${Math.round(cloudBase)} m`],
+  ];
+  byId("aerosolReadout").innerHTML = rows.map(([label,value,tone]) => `<div class="${tone ? `tone-${tone}` : ""}"><dt>${label}：</dt><dd>${value}</dd></div>`).join("");
+  byId("localCloudType").textContent = inferCloudType(day);
 }
 
 function renderChart(day) {
@@ -86,7 +180,7 @@ function renderGribChart(profile, day) {
   byId("chartNote").textContent=`主模型 ${profile.primary_model}，${profile.run_time.slice(0,13).replace("T"," ")} UTC 起报，预报时效 +${profile.forecast_hour}h${compare}。色块透明度表示压力层相对湿度。`;
 }
 
-function render() { const day=periodDays[activePeriod] || buildFallbackDay(activePeriod); renderHeader(day); renderSolarCards(); renderChart(day); renderMetrics(day); document.querySelectorAll("[role=tab]").forEach(tab=>tab.setAttribute("aria-selected",String(tab.dataset.period===activePeriod))); }
+function render() { const day=periodDays[activePeriod] || buildFallbackDay(activePeriod); renderHeader(day); renderSolarCards(); renderChart(day); renderAerosolPanel(day); renderMetrics(day); document.querySelectorAll("[role=tab]").forEach(tab=>tab.setAttribute("aria-selected",String(tab.dataset.period===activePeriod))); }
 
 async function loadRealPair() {
   try {

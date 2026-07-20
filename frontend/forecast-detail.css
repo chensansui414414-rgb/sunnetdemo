@@ -3,3 +3,26 @@
 @media(max-width:800px){.detail-header{height:70px;grid-template-columns:1fr 1fr}.detail-header .brand{justify-self:end}.header-place{display:none}.detail-hero{min-height:680px;grid-template-columns:1fr;align-items:start;padding-top:72px}.detail-title h1{font-size:clamp(64px,18vw,90px)}.detail-verdict{align-self:end}.section-head{grid-template-columns:1fr;margin-bottom:42px}.section-head h2{font-size:50px}.solar-grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:1fr 1fr}.profile-tabs button{flex:1;padding:16px 8px}.chart-meta{height:auto;padding:18px;align-items:flex-start;gap:14px}.chart-meta>div{display:grid;gap:5px}.chart-wrap{min-height:360px;padding:0}.chart-legend,.chart-note{padding-left:16px;padding-right:16px}.explanation-card{grid-template-columns:1fr}.explanation-card>div{grid-column:1}footer{display:grid;gap:24px}}
 @media(max-width:480px){.metric-grid{grid-template-columns:1fr}.solar-card{min-height:230px}.chart-meta>div:last-child{text-align:right}.profile-head>span{position:static}.chart-wrap{overflow-x:auto}.chart-wrap svg{min-width:700px}.detail-hero{min-height:620px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+
+.aerosol-panel{margin-top:18px;border:1px solid rgba(255,255,255,.11);background:#11110e;border-radius:var(--radius);padding:clamp(20px,3vw,34px)}
+.aerosol-panel-head{display:grid;grid-template-columns:1fr 2fr;gap:5vw;margin-bottom:24px}
+.aerosol-panel-head p{margin:5px 0 0;color:#666;font-size:10px;letter-spacing:.15em;text-transform:uppercase}
+.aerosol-panel-head h3{margin:0;font-size:clamp(28px,3.4vw,48px);line-height:1;letter-spacing:-.055em;font-weight:500}
+.aerosol-layout{display:grid;grid-template-columns:1.05fr .9fr 1.2fr;gap:12px;align-items:stretch}
+.aerosol-chart-card,.aerosol-readout,.twilight-chart-card{background:#f5f1e9;color:#171713;border-radius:16px;padding:18px;min-width:0}
+.aerosol-readout{background:#fbf8f0;display:flex;flex-direction:column;justify-content:space-between}
+.mini-chart-title{font-size:13px;font-weight:600;letter-spacing:-.03em;text-align:center;margin-bottom:8px}
+.mini-chart svg{display:block;width:100%;height:auto}
+.aerosol-readout dl{margin:0;display:grid;gap:7px}
+.aerosol-readout dl>div{display:grid;grid-template-columns:118px 1fr;gap:10px;align-items:baseline}
+.aerosol-readout dt{color:#494640;font-size:13px}
+.aerosol-readout dd{margin:0;color:#2a2926;font-size:17px;letter-spacing:-.035em;text-align:right}
+.aerosol-readout .tone-good dt,.aerosol-readout .tone-good dd{color:#2dbb73}
+.aerosol-readout .tone-bad dt,.aerosol-readout .tone-bad dd{color:#e35e59}
+.aerosol-readout .tone-aod dt,.aerosol-readout .tone-aod dd{color:#b59558}
+.aerosol-readout .tone-vivid dt,.aerosol-readout .tone-vivid dd{color:#3f3758}
+.cloud-family{border-top:1px solid rgba(0,0,0,.12);margin-top:15px;padding-top:14px;display:grid;gap:7px}
+.cloud-family span{font-size:12px;color:#666}
+.cloud-family strong{font-size:22px;line-height:1.2;letter-spacing:-.04em;color:#15130f}
+@media(max-width:1050px){.aerosol-layout{grid-template-columns:1fr 1fr}.twilight-chart-card{grid-column:1/-1}.aerosol-panel-head{grid-template-columns:1fr}}
+@media(max-width:800px){.aerosol-layout{grid-template-columns:1fr}.aerosol-readout dl>div{grid-template-columns:1fr auto}}

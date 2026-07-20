@@ -31,7 +31,7 @@ class WeatherDataFetcher:
 
     def fetch_three_days(self, lat: float, lon: float) -> list[dict[str, Any]]:
         """优先读取三小时内缓存，否则请求真实数据；异常时安全降级。"""
-        cache_file = self.cache_dir / f"openmeteo_v1_{lat:.2f}_{lon:.2f}_{date.today().isoformat()}.json"
+        cache_file = self.cache_dir / f"openmeteo_v2_{lat:.2f}_{lon:.2f}_{date.today().isoformat()}.json"
         cached = self._read_cache(cache_file)
         strict_real_data = os.getenv("STRICT_REAL_DATA", "0") == "1"
         if cached and datetime.now().timestamp() - cache_file.stat().st_mtime < 3 * 3600:
@@ -83,7 +83,7 @@ class WeatherDataFetcher:
         weather = self._get_json(WEATHER_URL, {
             "latitude": coordinates_lat,
             "longitude": coordinates_lon,
-            "hourly": "cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility,direct_radiation,temperature_2m,dew_point_2m",
+            "hourly": "cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility,direct_radiation,temperature_2m,dew_point_2m,precipitation,precipitation_probability",
             "daily": "sunrise,sunset",
             "timezone": "auto",
             "forecast_days": 3,
@@ -105,9 +105,21 @@ class WeatherDataFetcher:
                 local_index = self._nearest_time_index(local["hourly"]["time"], event_time)
                 corridor_index = self._nearest_time_index(corridor["hourly"]["time"], event_time)
                 air_index = self._nearest_time_index(air["hourly"]["time"], event_time)
+                window_indices = self._time_window_indices(local["hourly"]["time"], event_time, hours=1.5)
+                corridor_window_indices = self._time_window_indices(corridor["hourly"]["time"], event_time, hours=1.5)
+                supply_index = self._shifted_time_index(
+                    local["hourly"]["time"],
+                    event_time,
+                    hours=1 if period == "morning" else -1,
+                )
                 high = self._number(local["hourly"]["cloud_cover_high"][local_index])
                 mid = self._number(local["hourly"]["cloud_cover_mid"][local_index])
                 low = self._number(local["hourly"]["cloud_cover_low"][local_index])
+                high_window = [self._number(local["hourly"]["cloud_cover_high"][index]) for index in window_indices]
+                mid_window = [self._number(local["hourly"]["cloud_cover_mid"][index]) for index in window_indices]
+                low_window = [self._number(local["hourly"]["cloud_cover_low"][index]) for index in window_indices]
+                corridor_low_window = [self._number(corridor["hourly"]["cloud_cover_low"][index]) for index in corridor_window_indices]
+                canvas_window = [0.72 * high_window[index] + 0.28 * mid_window[index] for index in range(len(window_indices))]
                 temperature = self._number(local["hourly"]["temperature_2m"][local_index], 20)
                 dew_point = self._number(local["hourly"]["dew_point_2m"][local_index], temperature - 5)
                 lcl = max(200.0, 125.0 * max(0.0, temperature - dew_point))
@@ -124,6 +136,13 @@ class WeatherDataFetcher:
                     "aod": round(self._number(air["hourly"]["aerosol_optical_depth"][air_index], 0.15), 3),
                     "pm2_5": round(self._number(air["hourly"]["pm2_5"][air_index]), 1),
                     "direct_radiation": self._number(local["hourly"]["direct_radiation"][local_index]),
+                    "solar_supply_radiation": self._number(local["hourly"]["direct_radiation"][supply_index]),
+                    "precipitation_mm": round(max(self._hourly_number(local, "precipitation", index) for index in window_indices), 2),
+                    "precipitation_probability": round(max(self._hourly_number(local, "precipitation_probability", index) for index in window_indices), 1),
+                    "local_low_cloud_max": round(max(low_window), 1),
+                    "corridor_low_cloud_max": round(max(corridor_low_window), 1),
+                    "canvas_cover_window": round(sum(canvas_window) / max(1, len(canvas_window)), 1),
+                    "canvas_variability": round(self._spread(canvas_window), 1),
                     "east_low_cloud_cover": self._number(east["hourly"]["cloud_cover_low"][corridor_index]),
                     "west_low_cloud_cover": self._number(west["hourly"]["cloud_cover_low"][corridor_index]),
                 }
@@ -146,8 +165,37 @@ class WeatherDataFetcher:
         return min(range(len(times)), key=lambda index: abs((datetime.fromisoformat(times[index]) - target_dt).total_seconds()))
 
     @staticmethod
+    def _time_window_indices(times: list[str], target: str, hours: float) -> list[int]:
+        """返回目标时刻前后若干小时的小时级索引，用于减少单点采样误差。"""
+        target_dt = datetime.fromisoformat(target)
+        window = [
+            index for index, value in enumerate(times)
+            if abs((datetime.fromisoformat(value) - target_dt).total_seconds()) <= hours * 3600
+        ]
+        return window or [WeatherDataFetcher._nearest_time_index(times, target)]
+
+    @staticmethod
+    def _shifted_time_index(times: list[str], target: str, hours: float) -> int:
+        """取日出后或日落前的供光时刻，避免直接用太阳刚贴地时的低辐射值。"""
+        shifted = datetime.fromisoformat(target) + timedelta(hours=hours)
+        return min(range(len(times)), key=lambda index: abs((datetime.fromisoformat(times[index]) - shifted).total_seconds()))
+
+    @staticmethod
     def _number(value: Any, default: float = 0.0) -> float:
         return float(value) if value is not None else default
+
+    @classmethod
+    def _hourly_number(cls, payload: dict[str, Any], key: str, index: int, default: float = 0.0) -> float:
+        """安全读取小时字段；上游临时缺字段时不让整个预报崩溃。"""
+        values = payload.get("hourly", {}).get(key, [])
+        if not isinstance(values, list) or index >= len(values):
+            return default
+        return cls._number(values[index], default)
+
+    @staticmethod
+    def _spread(values: list[float]) -> float:
+        """简单极差，表达日出/日落窗口内云量是否剧烈变化。"""
+        return max(values) - min(values) if values else 0.0
 
     @staticmethod
     def _build_mock_data(lat: float, lon: float) -> list[dict[str, Any]]:
