@@ -1,0 +1,5 @@
+[tool.vercel]
+# Vercel 的 FastAPI 默认扫描 app.py/index.py/server.py 等位置。
+# 本项目入口在 backend/api/main.py，因此需要显式声明 ASGI app。
+entrypoint = "backend.api.main:app"
+

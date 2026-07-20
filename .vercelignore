@@ -1,0 +1,10 @@
+.venv/
+data/
+__pycache__/
+*.pyc
+*.pyo
+*.grib2
+*.idx
+.DS_Store
+wechat-local-preview-qr.png
+
