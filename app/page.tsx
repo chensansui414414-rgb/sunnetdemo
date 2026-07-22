@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import cityCalibration from "../backend/algorithm/city_calibration.json";
 
 type Mode = "sunset" | "sunrise";
 
@@ -28,6 +29,15 @@ type Forecast = {
   score: number;
   confidence: number;
   level: string;
+  stable_score: number;
+  burst_score: number;
+  horizon_gap_score: number;
+  horizon_gap_label: string;
+  confidence_label: string;
+  tags: string[];
+  advice: string;
+  algorithm_version: string;
+  city_calibration_version: string;
   verdict: string;
   summary: string;
   peak: string;
@@ -57,7 +67,27 @@ type Forecast = {
     solarFactor: string;
     precipFactor: string;
     consistencyFactor: string;
+    burst_score: number;
+    horizon_gap_score: number;
+    cloud_variability_score: number;
+    post_rain_signal: number;
+    model_disagreement_signal: number;
   };
+};
+
+type Calibration = {
+  aod_optimal: number;
+  low_cloud_penalty: number;
+  humidity_optimal: number;
+  burst_bonus: number;
+  big_burn_threshold: number;
+  small_burn_threshold: number;
+};
+
+type CalibrationFile = {
+  version: string;
+  default: Calibration;
+  [city: string]: Partial<Calibration> | Calibration | string;
 };
 
 type City = {
@@ -113,10 +143,22 @@ const modeLabels: Record<Mode, string> = {
   sunrise: "明早日出",
 };
 
+const calibrationMap = cityCalibration as CalibrationFile;
+const algorithmVersion = "fire-cloud-v2-burst-calibrated";
+
 const fallbackForecast: Forecast = {
   score: 0,
   confidence: 0,
   level: "读取中",
+  stable_score: 0,
+  burst_score: 0,
+  horizon_gap_score: 0,
+  horizon_gap_label: "等待数据",
+  confidence_label: "等待真实数据",
+  tags: ["数据读取中"],
+  advice: "正在读取 GFS、ECMWF 与 AOD 数据。",
+  algorithm_version: algorithmVersion,
+  city_calibration_version: calibrationMap.version,
   verdict: "正在读取真实气象数据。",
   summary: "连接 GFS/ECMWF 预报与 AOD 数据，计算太阳光路通透度和本地云层画布质量。",
   peak: "--:--",
@@ -143,6 +185,11 @@ const fallbackForecast: Forecast = {
     solarFactor: "--",
     precipFactor: "--",
     consistencyFactor: "--",
+    burst_score: 0,
+    horizon_gap_score: 0,
+    cloud_variability_score: 0,
+    post_rain_signal: 0,
+    model_disagreement_signal: 0,
   },
   factors: [
     { label: "光路通透度", value: 0, note: "等待太阳方向低云、能见度、降水与 AOD 数据" },
@@ -207,6 +254,35 @@ function scoreToLevel(score: number) {
   if (score >= 45) return "小烧";
   if (score > 0) return "无烧";
   return "读取中";
+}
+
+function getCalibration(cityName: string): Calibration {
+  const cityValue = calibrationMap[cityName];
+  const citySpecific = typeof cityValue === "object" && cityValue !== null ? cityValue : {};
+  return {
+    ...calibrationMap.default,
+    ...citySpecific,
+  } as Calibration;
+}
+
+function scoreToLevelWithCalibration(score: number, calibration: Calibration) {
+  if (score >= calibration.big_burn_threshold) return "大烧";
+  if (score >= calibration.small_burn_threshold) return "小烧";
+  if (score > 0) return "无烧";
+  return "读取中";
+}
+
+function horizonGapLabel(score: number) {
+  if (score >= 68) return "云缝机会高";
+  if (score >= 42) return "云缝机会中";
+  return "云缝机会低";
+}
+
+function confidenceLabel(stable: number, burst: number, consistency: number) {
+  if (stable >= 72 && consistency >= 78) return "高置信";
+  if (burst - stable >= 18) return "稳定条件一般";
+  if (consistency < 62) return "模型分歧";
+  return "中等置信";
 }
 
 function degrees(value: number) {
@@ -279,14 +355,14 @@ function describeAtmosphere(humidity: number, visibility: number) {
   return "大气条件中等，颜色表现取决于云缝";
 }
 
-function makeVerdict(score: number, mode: Mode) {
-  if (score >= 72) return mode === "sunset" ? "大烧条件成立，今晚值得提前找西向机位。" : "大烧条件成立，明早值得早起。";
-  if (score >= 45) return "小烧条件，光路或云画布有一项不够理想。";
+function makeVerdict(score: number, mode: Mode, calibration: Calibration) {
+  if (score >= calibration.big_burn_threshold) return mode === "sunset" ? "大烧条件成立，今晚值得提前找西向机位。" : "大烧条件成立，明早值得早起。";
+  if (score >= calibration.small_burn_threshold) return "小烧条件，光路或云画布有一项不够理想。";
   if (score > 0) return "无烧倾向，光路和云画布没有同时成立。";
   return "正在读取真实气象数据。";
 }
 
-function calculateCore(hourlyInput: OpenMeteoResponse["hourly"], index: number, aod: number, ecmwfHourly?: OpenMeteoResponse["hourly"]) {
+function calculateCore(hourlyInput: OpenMeteoResponse["hourly"], index: number, aod: number, calibration: Calibration, ecmwfHourly?: OpenMeteoResponse["hourly"]) {
   const hourly = hourlyInput ?? {};
   const times = hourly.time ?? [];
   const prevIndex = Math.max(0, index - 1);
@@ -298,21 +374,63 @@ function calculateCore(hourlyInput: OpenMeteoResponse["hourly"], index: number, 
   const humidity = at(hourly.relative_humidity_2m, index, 60);
   const visibility = at(hourly.visibility, index, 10000);
   const precip = at(hourly.precipitation_probability, index, 0);
+  const precipPrev = at(hourly.precipitation_probability, prevIndex, precip);
+  const precipNext = at(hourly.precipitation_probability, nextIndex, precip);
   const cloudPrev = at(hourly.cloud_cover, prevIndex, cloud);
   const cloudNext = at(hourly.cloud_cover, nextIndex, cloud);
   const midHigh = Math.min(100, mid + high);
-  const lightPath = clamp01((100 - low) / 100) * clamp01(visibility / 18000) * clamp01(1 - precip / 130) * clamp01(1 - Math.max(aod - 0.45, 0) / 0.65);
+  const adjustedLow = low * calibration.low_cloud_penalty;
+  const lightPath = clamp01((100 - adjustedLow) / 100) * clamp01(visibility / 18000) * clamp01(1 - precip / 130) * clamp01(1 - Math.max(aod - 0.45, 0) / 0.65);
   const canvasAmount = 1 - Math.min(Math.abs(midHigh - 52) / 52, 1);
-  const canvasThinness = clamp01(1 - Math.max(low - 38, 0) / 70);
+  const canvasThinness = clamp01(1 - Math.max(adjustedLow - 38, 0) / 70);
   const canvasStability = clamp01(1 - Math.abs(cloudNext - cloudPrev) / 85);
   const cloudCanvas = clamp01((canvasAmount * 0.55 + high / 100 * 0.25 + canvasStability * 0.2) * canvasThinness);
-  const aodFactor = 0.72 + 0.34 * Math.exp(-Math.pow((aod - 0.18) / 0.18, 2));
+  const aodFactor = 0.72 + 0.34 * Math.exp(-Math.pow((aod - calibration.aod_optimal) / 0.18, 2));
   const precipFactor = clamp01(1 - precip / 115);
   const ecmwfCloud = at(ecmwfHourly?.cloud_cover, index, cloud);
   const ecmwfLow = at(ecmwfHourly?.cloud_cover_low, index, low);
   const modelDiff = (Math.abs(cloud - ecmwfCloud) + Math.abs(low - ecmwfLow)) / 2;
   const consistencyFactor = clamp01(1 - modelDiff / 115);
-  return { cloud, low, mid, high, humidity, visibility, precip, lightPath, cloudCanvas, aodFactor, precipFactor, consistencyFactor, canvasStability };
+  const cloudVariabilityScore = clamp(Math.abs(cloudNext - cloudPrev) * 2.25 + Math.abs(low - at(hourly.cloud_cover_low, prevIndex, low)) * 0.8);
+  const postRainSignal = clamp((precipPrev - precipNext) * 1.6 + Math.max(0, 55 - precip) * 0.45);
+  const modelDisagreementSignal = clamp(modelDiff * 1.4);
+  const horizonGapScore = clamp(
+    (low >= 20 && low <= 65 ? 38 : low < 20 ? 18 : 4) +
+      Math.min(midHigh, 70) * 0.28 +
+      (100 - precip) * 0.14 +
+      Math.min(visibility / 1000, 18) +
+      cloudVariabilityScore * 0.18 -
+      Math.max(aod - 0.5, 0) * 70,
+  );
+  const burstScore = clamp(
+    (horizonGapScore * 0.35 +
+      clamp(cloudCanvas * 100) * 0.25 +
+      cloudVariabilityScore * 0.15 +
+      postRainSignal * 0.1 +
+      clamp(aodFactor * 100, 0, 110) * 0.1 +
+      (lightPath > 0.28 && cloudCanvas > 0.25 ? modelDisagreementSignal : 0) * 0.05) *
+      calibration.burst_bonus,
+  );
+  return {
+    cloud,
+    low,
+    mid,
+    high,
+    humidity,
+    visibility,
+    precip,
+    lightPath,
+    cloudCanvas,
+    aodFactor,
+    precipFactor,
+    consistencyFactor,
+    canvasStability,
+    cloudVariabilityScore,
+    postRainSignal,
+    modelDisagreementSignal,
+    horizonGapScore,
+    burstScore,
+  };
 }
 
 function makeProfile(core: ReturnType<typeof calculateCore>, aod: number, solarAzimuth: number): ProfileCell[] {
@@ -334,7 +452,36 @@ function makeProfile(core: ReturnType<typeof calculateCore>, aod: number, solarA
   });
 }
 
+function makeTags(core: ReturnType<typeof calculateCore>, stableScore: number, burstScore: number, calibration: Calibration) {
+  const tags: string[] = [];
+  if (stableScore >= calibration.big_burn_threshold && core.consistencyFactor >= 0.78) tags.push("高置信");
+  if (core.low > 58) tags.push("低云风险");
+  if (burstScore >= 68) tags.push("爆发潜力高");
+  if (core.horizonGapScore >= 58) tags.push("云缝机会");
+  if (core.postRainSignal >= 42) tags.push("雨后窗口");
+  if (core.modelDisagreementSignal >= 35) tags.push("模型分歧");
+  if (core.cloudVariabilityScore >= 55) tags.push("日落后窗口");
+  return tags.length ? tags : ["条件稳定"];
+}
+
+function makeAdvice(stableScore: number, burstScore: number, core: ReturnType<typeof calculateCore>, mode: Mode) {
+  if (burstScore - stableScore >= 18 && burstScore >= 65) {
+    return `稳定条件一般，但太阳方向低云处于可开缝区间，中高云画布存在，云量变化较快，存在${mode === "sunset" ? "日落后" : "日出前后"}突然爆发机会；如果离观测点近，建议蹲守20分钟。`;
+  }
+  if (stableScore >= 72) {
+    return "稳定命中分较高，光路和云画布同时成立，建议提前到位并保留峰值后观察窗口。";
+  }
+  if (core.low > 70) {
+    return "低云遮挡偏强，爆发依赖地平线短时开缝；不建议远距离专程前往。";
+  }
+  if (core.cloudCanvas < 0.28) {
+    return "太阳方向相对可用，但本地中高云画布不足，容易出现有光无云的情况。";
+  }
+  return "稳定条件和爆发潜力都处在中间区间，适合顺路观察，重点看地平线是否开缝。";
+}
+
 function makeForecast(gfs: OpenMeteoResponse, mode: Mode, city: City, aodData?: AirQualityResponse, ecmwf?: OpenMeteoResponse): Forecast {
+  const calibration = getCalibration(city.name);
   const hourly = gfs.hourly ?? {};
   const times = hourly.time ?? [];
   const eventTime = mode === "sunset" ? gfs.daily?.sunset?.[0] : gfs.daily?.sunrise?.[1] ?? gfs.daily?.sunrise?.[0];
@@ -344,10 +491,10 @@ function makeForecast(gfs: OpenMeteoResponse, mode: Mode, city: City, aodData?: 
   const targetIndex = nearestIndex(times, target);
   const aodIndex = nearestIndex(aodData?.hourly?.time, target);
   const aod = at(aodData?.hourly?.aerosol_optical_depth, aodIndex, 0.16);
-  const core = calculateCore(hourly, targetIndex, aod, ecmwf?.hourly);
+  const core = calculateCore(hourly, targetIndex, aod, calibration, ecmwf?.hourly);
   const solar = solarPosition(city.latitude, city.longitude, target);
   const solarFactor = clamp01(0.78 + (1 - Math.min(Math.abs(solar.altitude + 3) / 13, 1)) * 0.27);
-  const score = clamp(
+  const stableScore = clamp(
     100 *
       Math.sqrt(core.lightPath * core.cloudCanvas) *
       core.aodFactor *
@@ -355,12 +502,14 @@ function makeForecast(gfs: OpenMeteoResponse, mode: Mode, city: City, aodData?: 
       core.precipFactor *
       core.consistencyFactor,
   );
+  const burstScore = core.burstScore;
+  const score = stableScore;
   const confidence = clamp(38 + core.consistencyFactor * 36 + core.canvasStability * 14 - core.precip * 0.16, 28, 92);
   const timeline = offsets.map((offset, index) => {
     const itemIndex = eventTime ? nearestIndex(times, addMinutes(eventTime, offset)) : targetIndex;
     const pointTarget = eventTime ? addMinutes(eventTime, offset) : target;
     const pointSolar = solarPosition(city.latitude, city.longitude, pointTarget);
-    const pointCore = calculateCore(hourly, itemIndex, aod, ecmwf?.hourly);
+    const pointCore = calculateCore(hourly, itemIndex, aod, calibration, ecmwf?.hourly);
     const pointSolarFactor = clamp01(0.78 + (1 - Math.min(Math.abs(pointSolar.altitude + 3) / 13, 1)) * 0.27);
     const value = clamp(100 * Math.sqrt(pointCore.lightPath * pointCore.cloudCanvas) * pointCore.aodFactor * pointSolarFactor * pointCore.precipFactor * pointCore.consistencyFactor);
     return {
@@ -390,15 +539,31 @@ function makeForecast(gfs: OpenMeteoResponse, mode: Mode, city: City, aodData?: 
     solarFactor: solarFactor.toFixed(2),
     precipFactor: core.precipFactor.toFixed(2),
     consistencyFactor: core.consistencyFactor.toFixed(2),
+    burst_score: burstScore,
+    horizon_gap_score: core.horizonGapScore,
+    cloud_variability_score: core.cloudVariabilityScore,
+    post_rain_signal: core.postRainSignal,
+    model_disagreement_signal: core.modelDisagreementSignal,
   };
   const profile = makeProfile(core, aod, solar.azimuth);
+  const tags = makeTags(core, stableScore, burstScore, calibration);
+  const advice = makeAdvice(stableScore, burstScore, core, mode);
 
   return {
     score,
     confidence,
-    level: scoreToLevel(score),
-    verdict: makeVerdict(score, mode),
-    summary: `${describeRaw(raw)} 高分必须同时满足太阳方向光路通透和本地中高云画布可用。`,
+    level: scoreToLevelWithCalibration(score, calibration),
+    stable_score: stableScore,
+    burst_score: burstScore,
+    horizon_gap_score: core.horizonGapScore,
+    horizon_gap_label: horizonGapLabel(core.horizonGapScore),
+    confidence_label: confidenceLabel(stableScore, burstScore, clamp(core.consistencyFactor * 100)),
+    tags,
+    advice,
+    algorithm_version: algorithmVersion,
+    city_calibration_version: calibrationMap.version,
+    verdict: makeVerdict(score, mode, calibration),
+    summary: `${describeRaw(raw)} 高分必须同时满足太阳方向光路通透和本地中高云画布可用；爆发潜力用于捕捉雨后开缝、低云边缘透光和模型分歧下的变化机会。`,
     peak: peakPoint?.time ?? formatTime(target.toISOString()),
     sunTime: formatTime(eventTime),
     updatedAt: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }),
@@ -570,6 +735,11 @@ export default function Home() {
               <span>{modeLabels[mode]}火烧云指数</span>
             </h1>
             <p className="hero-summary">{forecast.summary}</p>
+            <div className="tag-row" aria-label="预测标签">
+              {forecast.tags.map((tag) => (
+                <span key={tag}>{tag}</span>
+              ))}
+            </div>
             <div className="mode-switch" role="tablist" aria-label="预报类型">
               {(Object.keys(modeLabels) as Mode[]).map((item) => (
                 <button
@@ -603,7 +773,7 @@ export default function Home() {
               </div>
               <div className="score-caption">
                 <b>{forecast.level}</b>
-                <span>高分必须同时有光路和云画布</span>
+                <span>稳定命中分 · {forecast.confidence_label}</span>
               </div>
             </div>
           </section>
@@ -622,6 +792,14 @@ export default function Home() {
             <div className="metric-row">
               <span>置信度</span>
               <strong>{forecast.confidence}%</strong>
+            </div>
+            <div className="metric-row">
+              <span>爆发潜力</span>
+              <strong>{forecast.burst_score}</strong>
+            </div>
+            <div className="metric-row">
+              <span>云缝概率</span>
+              <strong>{forecast.horizon_gap_score}</strong>
             </div>
             <div className="update-strip">
               <span>更新 {forecast.updatedAt}</span>
@@ -654,6 +832,11 @@ export default function Home() {
             ["太阳供光", forecast.raw.solarFactor],
             ["降水惩罚", forecast.raw.precipFactor],
             ["模型一致性", forecast.raw.consistencyFactor],
+            ["爆发潜力", `${forecast.raw.burst_score}`],
+            ["云缝概率", `${forecast.raw.horizon_gap_score}`],
+            ["云量变化", `${forecast.raw.cloud_variability_score}`],
+            ["雨后信号", `${forecast.raw.post_rain_signal}`],
+            ["分歧机会", `${forecast.raw.model_disagreement_signal}`],
           ].map(([label, value]) => (
             <article className="raw-card" key={label}>
               <span>{label}</span>
@@ -667,6 +850,27 @@ export default function Home() {
         <div className="section-heading">
           <p className="eyebrow">Score factors</p>
           <h2>火烧云指数拆解</h2>
+        </div>
+        <div className="dual-score-grid">
+          <article className="dual-score-card">
+            <span>stable_score</span>
+            <strong>{forecast.stable_score}</strong>
+            <p>稳定命中分：沿用保守主模型，判断大概率是否值得蹲。</p>
+          </article>
+          <article className="dual-score-card is-burst">
+            <span>burst_score</span>
+            <strong>{forecast.burst_score}</strong>
+            <p>爆发潜力分：捕捉雨后开缝、低云边缘透光、模型分歧但未全坏的突然大烧机会。</p>
+          </article>
+          <article className="dual-score-card">
+            <span>horizon_gap_score</span>
+            <strong>{forecast.horizon_gap_score}</strong>
+            <p>{forecast.horizon_gap_label}：判断太阳方向是否存在地平线云缝。</p>
+          </article>
+        </div>
+        <div className="advice-card">
+          <span>出门建议</span>
+          <p>{forecast.advice}</p>
         </div>
         <div className="factor-grid">
           {forecast.factors.map((factor) => (
@@ -800,7 +1004,7 @@ export default function Home() {
               <span className="rank">0{index + 1}</span>
               <span className="city-name">{item.name}</span>
               <strong>{item.activeForecast.score}</strong>
-              <small>{getLevel(item.activeForecast.score)} · {item.activeForecast.peak}</small>
+              <small>{item.activeForecast.level} · 爆发 {item.activeForecast.burst_score} · {item.activeForecast.peak}</small>
             </button>
           ))}
         </div>

@@ -1,0 +1,52 @@
+{
+  "version": "city-calibration-v1",
+  "default": {
+    "aod_optimal": 0.16,
+    "low_cloud_penalty": 1.0,
+    "humidity_optimal": 65,
+    "burst_bonus": 1.0,
+    "big_burn_threshold": 72,
+    "small_burn_threshold": 45
+  },
+  "南京": {
+    "aod_optimal": 0.17,
+    "low_cloud_penalty": 0.95,
+    "humidity_optimal": 68,
+    "burst_bonus": 1.05
+  },
+  "上海": {
+    "aod_optimal": 0.15,
+    "low_cloud_penalty": 0.9,
+    "humidity_optimal": 72,
+    "burst_bonus": 1.08,
+    "big_burn_threshold": 71
+  },
+  "北京": {
+    "aod_optimal": 0.13,
+    "low_cloud_penalty": 1.06,
+    "humidity_optimal": 55,
+    "burst_bonus": 0.96
+  },
+  "广州": {
+    "aod_optimal": 0.18,
+    "low_cloud_penalty": 0.92,
+    "humidity_optimal": 74,
+    "burst_bonus": 1.12,
+    "small_burn_threshold": 43
+  },
+  "南通": {
+    "aod_optimal": 0.16,
+    "low_cloud_penalty": 0.9,
+    "humidity_optimal": 72,
+    "burst_bonus": 1.1,
+    "big_burn_threshold": 70
+  },
+  "成都": {
+    "aod_optimal": 0.2,
+    "low_cloud_penalty": 0.86,
+    "humidity_optimal": 76,
+    "burst_bonus": 1.14,
+    "big_burn_threshold": 70,
+    "small_burn_threshold": 42
+  }
+}
