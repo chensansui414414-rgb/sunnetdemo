@@ -427,6 +427,57 @@ button {
   margin: 0;
 }
 
+.formula-card {
+  background: var(--paper);
+  color: var(--ink);
+  display: grid;
+  gap: 14px;
+  margin-bottom: 12px;
+  padding: 22px;
+}
+
+.formula-card p {
+  font-family: var(--font-geist-mono), monospace;
+  margin: 0;
+}
+
+.formula-card strong {
+  font-size: clamp(22px, 3.2vw, 48px);
+  font-weight: 780;
+  line-height: 1.08;
+}
+
+.algorithm-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.algorithm-card {
+  background: rgba(247, 241, 223, 0.055);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 12px;
+  min-height: 190px;
+  padding: 18px;
+}
+
+.algorithm-card span {
+  color: var(--mint);
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.algorithm-card strong {
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.algorithm-card p {
+  color: #ddd3c1;
+  line-height: 1.55;
+  margin: 0;
+}
+
 .timeline-band {
   padding-top: 20px;
 }
@@ -567,6 +618,10 @@ button {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .algorithm-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .city-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -617,6 +672,7 @@ button {
 
   .factor-grid,
   .raw-grid,
+  .algorithm-grid,
   .timeline,
   .city-grid,
   .feedback-band,

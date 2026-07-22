@@ -15,11 +15,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "霞光预报网 | GlowCast",
   description:
-    "基于真实逐小时气象预报的六城日落与日出霞光指数。",
+    "基于光路通透度、云层画布、AOD、GFS/ECMWF一致性的六城火烧云指数。",
   openGraph: {
     title: "霞光预报网 | GlowCast",
     description:
-      "基于真实逐小时气象预报的六城霞光指数、峰值窗口、置信度和因子解释。",
+      "用光源、光路、云画布、AOD 和模型一致性计算六城火烧云潜力。",
     type: "website",
     images: [
       {
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "霞光预报网 | GlowCast",
-    description: "基于真实逐小时气象预报的六城霞光指数、峰值窗口、置信度和因子解释。",
+    description: "用光源、光路、云画布、AOD 和模型一致性计算六城火烧云潜力。",
     images: ["/og.png"],
   },
 };

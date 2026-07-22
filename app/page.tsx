@@ -19,6 +19,7 @@ type TimelinePoint = {
 type Forecast = {
   score: number;
   confidence: number;
+  level: string;
   verdict: string;
   summary: string;
   peak: string;
@@ -38,6 +39,15 @@ type Forecast = {
     humidity: number;
     visibilityKm: string;
     precipitation: number;
+    aod: string;
+    solarAzimuth: number;
+    solarAltitude: number;
+    lightPath: number;
+    cloudCanvas: number;
+    aodFactor: string;
+    solarFactor: string;
+    precipFactor: string;
+    consistencyFactor: string;
   };
 };
 
@@ -73,6 +83,13 @@ type OpenMeteoResponse = {
   generationtime_ms?: number;
 };
 
+type AirQualityResponse = {
+  hourly?: {
+    time?: string[];
+    aerosol_optical_depth?: number[];
+  };
+};
+
 const cityConfigs: City[] = [
   { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969 },
   { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737 },
@@ -90,8 +107,9 @@ const modeLabels: Record<Mode, string> = {
 const fallbackForecast: Forecast = {
   score: 0,
   confidence: 0,
+  level: "读取中",
   verdict: "正在读取真实气象数据。",
-  summary: "连接 Open-Meteo 逐小时预报，读取云量、湿度、能见度、降水概率和日出日落时间。",
+  summary: "连接 GFS/ECMWF 预报与 AOD 数据，计算太阳光路通透度和本地云层画布质量。",
   peak: "--:--",
   sunTime: "--:--",
   updatedAt: "--:--",
@@ -107,12 +125,21 @@ const fallbackForecast: Forecast = {
     humidity: 0,
     visibilityKm: "--",
     precipitation: 0,
+    aod: "--",
+    solarAzimuth: 0,
+    solarAltitude: 0,
+    lightPath: 0,
+    cloudCanvas: 0,
+    aodFactor: "--",
+    solarFactor: "--",
+    precipFactor: "--",
+    consistencyFactor: "--",
   },
   factors: [
-    { label: "云幕画布", value: 0, note: "等待云量数据" },
-    { label: "地平线通道", value: 0, note: "等待低云与能见度数据" },
-    { label: "大气通透", value: 0, note: "等待湿度数据" },
-    { label: "变化稳定", value: 0, note: "等待逐小时变化数据" },
+    { label: "光路通透度", value: 0, note: "等待太阳方向低云、能见度、降水与 AOD 数据" },
+    { label: "云层画布质量", value: 0, note: "等待本地中高云、云量稳定性数据" },
+    { label: "AOD色彩因子", value: 0, note: "等待气溶胶光学厚度数据" },
+    { label: "模型一致性", value: 0, note: "等待 GFS/ECMWF 对照结果" },
   ],
   timeline: [
     { time: "--:--", value: 0, label: "等待数据" },
@@ -155,6 +182,62 @@ function at(values: number[] | undefined, index: number, fallback = 0) {
   return Number.isFinite(value) ? Number(value) : fallback;
 }
 
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function scoreToLevel(score: number) {
+  if (score >= 72) return "大烧";
+  if (score >= 45) return "小烧";
+  if (score > 0) return "无烧";
+  return "读取中";
+}
+
+function degrees(value: number) {
+  return (value * 180) / Math.PI;
+}
+
+function radians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function solarPosition(latitude: number, longitude: number, date: Date) {
+  const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 0));
+  const day = Math.floor((date.getTime() - start.getTime()) / 86400000);
+  const hour = date.getHours() + date.getMinutes() / 60;
+  const gamma = (2 * Math.PI / 365) * (day - 1 + (hour - 12) / 24);
+  const declination =
+    0.006918 -
+    0.399912 * Math.cos(gamma) +
+    0.070257 * Math.sin(gamma) -
+    0.006758 * Math.cos(2 * gamma) +
+    0.000907 * Math.sin(2 * gamma) -
+    0.002697 * Math.cos(3 * gamma) +
+    0.00148 * Math.sin(3 * gamma);
+  const equationOfTime =
+    229.18 *
+    (0.000075 +
+      0.001868 * Math.cos(gamma) -
+      0.032077 * Math.sin(gamma) -
+      0.014615 * Math.cos(2 * gamma) -
+      0.040849 * Math.sin(2 * gamma));
+  const timeOffset = equationOfTime + 4 * longitude + 480;
+  const trueSolarTime = (hour * 60 + timeOffset) % 1440;
+  const hourAngle = radians(trueSolarTime / 4 - 180);
+  const lat = radians(latitude);
+  const altitude = degrees(
+    Math.asin(
+      Math.sin(lat) * Math.sin(declination) +
+        Math.cos(lat) * Math.cos(declination) * Math.cos(hourAngle),
+    ),
+  );
+  const azimuth = (degrees(Math.atan2(
+    Math.sin(hourAngle),
+    Math.cos(hourAngle) * Math.sin(lat) - Math.tan(declination) * Math.cos(lat),
+  )) + 180) % 360;
+  return { altitude, azimuth };
+}
+
 function describeCloud(total: number, low: number, high: number) {
   if (low > 75) return "低云偏厚，地平线透光窗口被压缩";
   if (total >= 35 && total <= 68 && high > 20) return "云量处在可染色区间，高云能承接暖色";
@@ -163,7 +246,7 @@ function describeCloud(total: number, low: number, high: number) {
 }
 
 function describeRaw(raw: Forecast["raw"]) {
-  return `模型读取 ${raw.dataTime} 附近的逐小时预报：总云量 ${raw.cloud}%，低云 ${raw.lowCloud}%，高云 ${raw.highCloud}%，湿度 ${raw.humidity}%，能见度 ${raw.visibilityKm} km，降水概率 ${raw.precipitation}%。`;
+  return `模型读取 ${raw.dataTime} 附近数据：太阳方位 ${raw.solarAzimuth}°，高度 ${raw.solarAltitude}°；总云量 ${raw.cloud}%，低云 ${raw.lowCloud}%，中高云 ${raw.midCloud + raw.highCloud}%，AOD ${raw.aod}，能见度 ${raw.visibilityKm} km，降水概率 ${raw.precipitation}%。`;
 }
 
 function describeTunnel(low: number, visibility: number, precip: number) {
@@ -181,51 +264,70 @@ function describeAtmosphere(humidity: number, visibility: number) {
 }
 
 function makeVerdict(score: number, mode: Mode) {
-  if (score >= 82) return mode === "sunset" ? "今晚，值得等一场霞光。" : "明早值得早起，窗口很像样。";
-  if (score >= 72) return mode === "sunset" ? "今晚值得出门，颜色有机会展开。" : "明早有戏，建议提前到位。";
-  if (score >= 60) return "可以蹲守，但别把期待拉满。";
-  if (score >= 45) return "有短暂窗口，适合顺路观察。";
-  return "条件偏弱，今天更适合云上观测。";
+  if (score >= 72) return mode === "sunset" ? "大烧条件成立，今晚值得提前找西向机位。" : "大烧条件成立，明早值得早起。";
+  if (score >= 45) return "小烧条件，光路或云画布有一项不够理想。";
+  if (score > 0) return "无烧倾向，光路和云画布没有同时成立。";
+  return "正在读取真实气象数据。";
 }
 
-function makeForecast(data: OpenMeteoResponse, mode: Mode): Forecast {
-  const hourly = data.hourly ?? {};
+function calculateCore(hourlyInput: OpenMeteoResponse["hourly"], index: number, aod: number, ecmwfHourly?: OpenMeteoResponse["hourly"]) {
+  const hourly = hourlyInput ?? {};
   const times = hourly.time ?? [];
-  const eventTime = mode === "sunset" ? data.daily?.sunset?.[0] : data.daily?.sunrise?.[1] ?? data.daily?.sunrise?.[0];
-  const offsets = mode === "sunset" ? [-40, -10, 18, 38] : [-38, -12, 0, 22];
-  const labels = mode === "sunset" ? ["暖色预热", "日落贴线", "峰值窗口", "余晖回落"] : ["天光抬升", "云底染色", "峰值窗口", "晨光铺开"];
-  const target = eventTime ? addMinutes(eventTime, mode === "sunset" ? 18 : -2) : new Date();
-  const targetIndex = nearestIndex(times, target);
-  const prevIndex = Math.max(0, targetIndex - 1);
-  const nextIndex = Math.min(Math.max(0, times.length - 1), targetIndex + 1);
-
-  const cloud = at(hourly.cloud_cover, targetIndex, 50);
-  const low = at(hourly.cloud_cover_low, targetIndex, cloud * 0.55);
-  const mid = at(hourly.cloud_cover_mid, targetIndex, cloud * 0.35);
-  const high = at(hourly.cloud_cover_high, targetIndex, cloud * 0.25);
-  const humidity = at(hourly.relative_humidity_2m, targetIndex, 60);
-  const visibility = at(hourly.visibility, targetIndex, 10000);
-  const precip = at(hourly.precipitation_probability, targetIndex, 0);
+  const prevIndex = Math.max(0, index - 1);
+  const nextIndex = Math.min(Math.max(0, times.length - 1), index + 1);
+  const cloud = at(hourly.cloud_cover, index, 50);
+  const low = at(hourly.cloud_cover_low, index, cloud * 0.45);
+  const mid = at(hourly.cloud_cover_mid, index, cloud * 0.35);
+  const high = at(hourly.cloud_cover_high, index, cloud * 0.25);
+  const humidity = at(hourly.relative_humidity_2m, index, 60);
+  const visibility = at(hourly.visibility, index, 10000);
+  const precip = at(hourly.precipitation_probability, index, 0);
   const cloudPrev = at(hourly.cloud_cover, prevIndex, cloud);
   const cloudNext = at(hourly.cloud_cover, nextIndex, cloud);
-  const dataTime = times[targetIndex] ?? "";
+  const midHigh = Math.min(100, mid + high);
+  const lightPath = clamp01((100 - low) / 100) * clamp01(visibility / 18000) * clamp01(1 - precip / 130) * clamp01(1 - Math.max(aod - 0.45, 0) / 0.65);
+  const canvasAmount = 1 - Math.min(Math.abs(midHigh - 52) / 52, 1);
+  const canvasThinness = clamp01(1 - Math.max(low - 38, 0) / 70);
+  const canvasStability = clamp01(1 - Math.abs(cloudNext - cloudPrev) / 85);
+  const cloudCanvas = clamp01((canvasAmount * 0.55 + high / 100 * 0.25 + canvasStability * 0.2) * canvasThinness);
+  const aodFactor = 0.72 + 0.34 * Math.exp(-Math.pow((aod - 0.18) / 0.18, 2));
+  const precipFactor = clamp01(1 - precip / 115);
+  const ecmwfCloud = at(ecmwfHourly?.cloud_cover, index, cloud);
+  const ecmwfLow = at(ecmwfHourly?.cloud_cover_low, index, low);
+  const modelDiff = (Math.abs(cloud - ecmwfCloud) + Math.abs(low - ecmwfLow)) / 2;
+  const consistencyFactor = clamp01(1 - modelDiff / 115);
+  return { cloud, low, mid, high, humidity, visibility, precip, lightPath, cloudCanvas, aodFactor, precipFactor, consistencyFactor, canvasStability };
+}
 
-  const canvas = clamp(92 - Math.abs(cloud - 58) * 1.05 + high * 0.24 + mid * 0.12 - Math.max(low - 42, 0) * 0.48);
-  const tunnel = clamp(92 - low * 0.62 - precip * 0.62 + Math.min(visibility / 1000, 16));
-  const atmosphere = clamp(90 - Math.abs(humidity - 64) * 0.72 + Math.min(visibility / 1500, 10) - precip * 0.35);
-  const evolution = clamp(86 - Math.abs(cloudNext - cloudPrev) * 1.05 - precip * 0.22 + Math.min(high, 55) * 0.16);
-  const score = clamp(canvas * 0.34 + tunnel * 0.3 + atmosphere * 0.2 + evolution * 0.16);
-  const confidence = clamp(82 - precip * 0.22 - Math.abs(cloudNext - cloudPrev) * 0.35 + (data.generationtime_ms ? 5 : 0), 38, 92);
+function makeForecast(gfs: OpenMeteoResponse, mode: Mode, city: City, aodData?: AirQualityResponse, ecmwf?: OpenMeteoResponse): Forecast {
+  const hourly = gfs.hourly ?? {};
+  const times = hourly.time ?? [];
+  const eventTime = mode === "sunset" ? gfs.daily?.sunset?.[0] : gfs.daily?.sunrise?.[1] ?? gfs.daily?.sunrise?.[0];
+  const offsets = mode === "sunset" ? [-40, -10, 18, 38] : [-38, -12, 0, 22];
+  const labels = mode === "sunset" ? ["光路预检", "太阳供光", "峰值窗口", "余光衰减"] : ["光路预检", "云底染色", "峰值窗口", "晨光接管"];
+  const target = eventTime ? addMinutes(eventTime, mode === "sunset" ? 18 : -2) : new Date();
+  const targetIndex = nearestIndex(times, target);
+  const aodIndex = nearestIndex(aodData?.hourly?.time, target);
+  const aod = at(aodData?.hourly?.aerosol_optical_depth, aodIndex, 0.16);
+  const core = calculateCore(hourly, targetIndex, aod, ecmwf?.hourly);
+  const solar = solarPosition(city.latitude, city.longitude, target);
+  const solarFactor = clamp01(0.78 + (1 - Math.min(Math.abs(solar.altitude + 3) / 13, 1)) * 0.27);
+  const score = clamp(
+    100 *
+      Math.sqrt(core.lightPath * core.cloudCanvas) *
+      core.aodFactor *
+      solarFactor *
+      core.precipFactor *
+      core.consistencyFactor,
+  );
+  const confidence = clamp(38 + core.consistencyFactor * 36 + core.canvasStability * 14 - core.precip * 0.16, 28, 92);
   const timeline = offsets.map((offset, index) => {
     const itemIndex = eventTime ? nearestIndex(times, addMinutes(eventTime, offset)) : targetIndex;
-    const pointCloud = at(hourly.cloud_cover, itemIndex, cloud);
-    const pointLow = at(hourly.cloud_cover_low, itemIndex, low);
-    const pointHigh = at(hourly.cloud_cover_high, itemIndex, high);
-    const pointHumidity = at(hourly.relative_humidity_2m, itemIndex, humidity);
-    const pointPrecip = at(hourly.precipitation_probability, itemIndex, precip);
-    const value = clamp(
-      90 - Math.abs(pointCloud - 52) * 1.1 - pointLow * 0.42 + pointHigh * 0.18 - Math.abs(pointHumidity - 62) * 0.42 - pointPrecip * 0.4,
-    );
+    const pointTarget = eventTime ? addMinutes(eventTime, offset) : target;
+    const pointSolar = solarPosition(city.latitude, city.longitude, pointTarget);
+    const pointCore = calculateCore(hourly, itemIndex, aod, ecmwf?.hourly);
+    const pointSolarFactor = clamp01(0.78 + (1 - Math.min(Math.abs(pointSolar.altitude + 3) / 13, 1)) * 0.27);
+    const value = clamp(100 * Math.sqrt(pointCore.lightPath * pointCore.cloudCanvas) * pointCore.aodFactor * pointSolarFactor * pointCore.precipFactor * pointCore.consistencyFactor);
     return {
       time: eventTime ? formatTime(addMinutes(eventTime, offset).toISOString()) : "--:--",
       value,
@@ -234,50 +336,52 @@ function makeForecast(data: OpenMeteoResponse, mode: Mode): Forecast {
   });
 
   const peakPoint = timeline.reduce((best, item) => (item.value > best.value ? item : best), timeline[0]);
-  const color = score >= 75 ? "#ff6a3d" : score >= 62 ? "#ffc857" : score >= 48 ? "#b9e7ff" : "#b5a6ff";
+  const color = score >= 72 ? "#ff6a3d" : score >= 45 ? "#ffc857" : "#b9e7ff";
+  const raw = {
+    dataTime: formatTime(times[targetIndex] ?? ""),
+    cloud: Math.round(core.cloud),
+    lowCloud: Math.round(core.low),
+    midCloud: Math.round(core.mid),
+    highCloud: Math.round(core.high),
+    humidity: Math.round(core.humidity),
+    visibilityKm: (core.visibility / 1000).toFixed(1),
+    precipitation: Math.round(core.precip),
+    aod: aod.toFixed(2),
+    solarAzimuth: Math.round(solar.azimuth),
+    solarAltitude: Math.round(solar.altitude),
+    lightPath: clamp(core.lightPath * 100),
+    cloudCanvas: clamp(core.cloudCanvas * 100),
+    aodFactor: core.aodFactor.toFixed(2),
+    solarFactor: solarFactor.toFixed(2),
+    precipFactor: core.precipFactor.toFixed(2),
+    consistencyFactor: core.consistencyFactor.toFixed(2),
+  };
 
   return {
     score,
     confidence,
+    level: scoreToLevel(score),
     verdict: makeVerdict(score, mode),
-    summary: `${describeCloud(cloud, low, high)}；${describeTunnel(low, visibility, precip)}。${describeRaw({
-      dataTime: formatTime(dataTime),
-      cloud: Math.round(cloud),
-      lowCloud: Math.round(low),
-      midCloud: Math.round(mid),
-      highCloud: Math.round(high),
-      humidity: Math.round(humidity),
-      visibilityKm: (visibility / 1000).toFixed(1),
-      precipitation: Math.round(precip),
-    })}`,
+    summary: `${describeRaw(raw)} 高分必须同时满足太阳方向光路通透和本地中高云画布可用。`,
     peak: peakPoint?.time ?? formatTime(target.toISOString()),
     sunTime: formatTime(eventTime),
     updatedAt: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }),
     trend: "实时",
     color,
-    source: "Open-Meteo 实时预报",
-    raw: {
-      dataTime: formatTime(dataTime),
-      cloud: Math.round(cloud),
-      lowCloud: Math.round(low),
-      midCloud: Math.round(mid),
-      highCloud: Math.round(high),
-      humidity: Math.round(humidity),
-      visibilityKm: (visibility / 1000).toFixed(1),
-      precipitation: Math.round(precip),
-    },
+    source: "GFS + ECMWF + AOD 实时预报",
+    raw,
     factors: [
-      { label: "云幕画布", value: canvas, note: "总云量不能太空也不能太厚，高云和中云越能承接霞光越好" },
-      { label: "地平线通道", value: tunnel, note: "低云、降水和能见度决定太阳低角度光线能不能穿进来" },
-      { label: "大气通透", value: atmosphere, note: describeAtmosphere(humidity, visibility) },
-      { label: "变化稳定", value: evolution, note: "基于峰值前后逐小时云量变化估算窗口稳定性" },
+      { label: "光路通透度", value: raw.lightPath, note: "太阳方向低云、雨幕、能见度和过高 AOD 会共同压低光路" },
+      { label: "云层画布质量", value: raw.cloudCanvas, note: "本地中高云约 30%–70%、低云不厚、变化稳定时更容易烧" },
+      { label: "AOD色彩因子", value: clamp(core.aodFactor * 100, 0, 120), note: "AOD 太低颜色淡，适中更鲜艳，太高会雾霾遮光" },
+      { label: "模型一致性", value: clamp(core.consistencyFactor * 100), note: "GFS 与 ECMWF 的云量/低云分歧越大，最终分数越保守" },
     ],
     timeline,
   };
 }
 
 async function fetchCityForecast(city: City): Promise<CityForecast> {
-  const params = new URLSearchParams({
+  const forecastParams = {
     latitude: String(city.latitude),
     longitude: String(city.longitude),
     timezone: "Asia/Shanghai",
@@ -293,25 +397,42 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
       "weather_code",
     ].join(","),
     daily: "sunrise,sunset",
+  };
+  const gfsParams = new URLSearchParams(forecastParams);
+  const ecmwfParams = new URLSearchParams(forecastParams);
+  const airParams = new URLSearchParams({
+    latitude: String(city.latitude),
+    longitude: String(city.longitude),
+    timezone: "Asia/Shanghai",
+    forecast_days: "2",
+    hourly: "aerosol_optical_depth",
   });
-  const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
-  if (!response.ok) {
-    throw new Error(`Open-Meteo request failed: ${response.status}`);
+  const [gfsResponse, ecmwfResponse, airResponse] = await Promise.allSettled([
+    fetch(`https://api.open-meteo.com/v1/gfs?${gfsParams.toString()}`),
+    fetch(`https://api.open-meteo.com/v1/ecmwf?${ecmwfParams.toString()}`),
+    fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?${airParams.toString()}`),
+  ]);
+  if (gfsResponse.status !== "fulfilled" || !gfsResponse.value.ok) {
+    throw new Error("GFS request failed");
   }
-  const data = (await response.json()) as OpenMeteoResponse;
+  const gfs = (await gfsResponse.value.json()) as OpenMeteoResponse;
+  const ecmwf =
+    ecmwfResponse.status === "fulfilled" && ecmwfResponse.value.ok
+      ? ((await ecmwfResponse.value.json()) as OpenMeteoResponse)
+      : undefined;
+  const air =
+    airResponse.status === "fulfilled" && airResponse.value.ok
+      ? ((await airResponse.value.json()) as AirQualityResponse)
+      : undefined;
   return {
     ...city,
-    sunset: makeForecast(data, "sunset"),
-    sunrise: makeForecast(data, "sunrise"),
+    sunset: makeForecast(gfs, "sunset", city, air, ecmwf),
+    sunrise: makeForecast(gfs, "sunrise", city, air, ecmwf),
   };
 }
 
 function getLevel(score: number) {
-  if (score >= 80) return "强烈推荐";
-  if (score >= 70) return "值得出门";
-  if (score >= 60) return "可以蹲守";
-  if (score > 0) return "谨慎观察";
-  return "读取中";
+  return scoreToLevel(score);
 }
 
 function makeLoadingCity(city: City): CityForecast {
@@ -385,7 +506,7 @@ export default function Home() {
             <span className="brand-mark">G</span>
             <span>
               <span>霞光预报网</span>
-              <small>GlowCast · Live weather model</small>
+              <small>GlowCast · Fire cloud model</small>
             </span>
           </button>
           <nav className="city-nav" aria-label="城市选择">
@@ -406,10 +527,10 @@ export default function Home() {
 
         <div className="hero-grid">
           <section className="hero-copy" aria-labelledby="hero-title">
-            <p className="eyebrow">Open-Meteo live forecast</p>
+            <p className="eyebrow">GFS + ECMWF + AOD model</p>
             <h1 id="hero-title">
               {city.name}
-              <span>{modeLabels[mode]}霞光指数</span>
+              <span>{modeLabels[mode]}火烧云指数</span>
             </h1>
             <p className="hero-summary">{forecast.summary}</p>
             <div className="mode-switch" role="tablist" aria-label="预报类型">
@@ -430,12 +551,12 @@ export default function Home() {
             </div>
             <div className="source-strip">
               <span>{loading ? "正在更新真实数据" : forecast.source}</span>
-              <span>云量 / 低云 / 高云 / 湿度 / 能见度 / 降水概率</span>
+              <span>光路通透度 × 云层画布质量 × AOD × 太阳供光 × 降水惩罚 × 模型一致性</span>
               {dataError ? <span>{dataError}</span> : null}
             </div>
           </section>
 
-          <section className="score-stage" aria-label={`${city.name}${modeLabels[mode]}霞光指数`}>
+          <section className="score-stage" aria-label={`${city.name}${modeLabels[mode]}火烧云指数`}>
             <div className="score-orbit" style={{ "--accent": forecast.color } as React.CSSProperties}>
               <div className="ring ring-one" />
               <div className="ring ring-two" />
@@ -444,8 +565,8 @@ export default function Home() {
                 <small>/100</small>
               </div>
               <div className="score-caption">
-                <b>{getLevel(forecast.score)}</b>
-                <span>真实气象数据 + 经验指数模型</span>
+                <b>{forecast.level}</b>
+                <span>高分必须同时有光路和云画布</span>
               </div>
             </div>
           </section>
@@ -481,13 +602,21 @@ export default function Home() {
         <div className="raw-grid">
           {[
             ["预报小时", forecast.raw.dataTime],
+            ["太阳方位", `${forecast.raw.solarAzimuth}°`],
+            ["太阳高度", `${forecast.raw.solarAltitude}°`],
             ["总云量", `${forecast.raw.cloud}%`],
             ["低云", `${forecast.raw.lowCloud}%`],
             ["中云", `${forecast.raw.midCloud}%`],
             ["高云", `${forecast.raw.highCloud}%`],
-            ["湿度", `${forecast.raw.humidity}%`],
+            ["AOD", forecast.raw.aod],
             ["能见度", `${forecast.raw.visibilityKm} km`],
             ["降水概率", `${forecast.raw.precipitation}%`],
+            ["光路", `${forecast.raw.lightPath}%`],
+            ["云画布", `${forecast.raw.cloudCanvas}%`],
+            ["AOD因子", forecast.raw.aodFactor],
+            ["太阳供光", forecast.raw.solarFactor],
+            ["降水惩罚", forecast.raw.precipFactor],
+            ["模型一致性", forecast.raw.consistencyFactor],
           ].map(([label, value]) => (
             <article className="raw-card" key={label}>
               <span>{label}</span>
@@ -500,7 +629,7 @@ export default function Home() {
       <section className="content-band">
         <div className="section-heading">
           <p className="eyebrow">Score factors</p>
-          <h2>霞光指数拆解</h2>
+          <h2>火烧云指数拆解</h2>
         </div>
         <div className="factor-grid">
           {forecast.factors.map((factor) => (
@@ -513,6 +642,33 @@ export default function Home() {
                 <span style={{ width: `${factor.value}%`, background: forecast.color }} />
               </div>
               <p>{factor.note}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="content-band">
+        <div className="section-heading">
+          <p className="eyebrow">Algorithm</p>
+          <h2>不是看天气好不好，而是看光能不能穿过云画布</h2>
+        </div>
+        <div className="formula-card">
+          <p>火烧云指数</p>
+          <strong>100 × √(光路通透度 × 云层画布质量) × AOD色彩因子 × 太阳供光因子 × 降水惩罚因子 × 模型一致性因子</strong>
+        </div>
+        <div className="algorithm-grid">
+          {[
+            ["01", "太阳位置", "根据城市经纬度和日期计算日出/日落时间、太阳方位角和太阳高度角，重点看太阳方向的光路。"],
+            ["02", "光路通透", "检查太阳方向的低云、雨幕、雾霾、能见度和 AOD，低云墙会让本地高云也烧不起来。"],
+            ["03", "云层画布", "判断本地中高云是否在 30%–70% 左右，低云不能太厚，云层变化要稳定。"],
+            ["04", "AOD 色彩", "AOD 太低颜色淡，适中更鲜艳，太高会变成雾霾遮光。"],
+            ["05", "GFS/ECMWF", "GFS 作为主模型，ECMWF 作为对照；两者分歧大时降低模型一致性和置信度。"],
+            ["06", "指数输出", "72 分以上大烧，45–71 分小烧，45 分以下无烧，并输出可解释指标。"],
+          ].map(([step, title, body]) => (
+            <article className="algorithm-card" key={step}>
+              <span>{step}</span>
+              <strong>{title}</strong>
+              <p>{body}</p>
             </article>
           ))}
         </div>
@@ -540,7 +696,7 @@ export default function Home() {
       <section className="content-band city-board">
         <div className="section-heading">
           <p className="eyebrow">Six city board</p>
-          <h2>首版城市实时总览</h2>
+          <h2>六城火烧云潜力排行</h2>
         </div>
         <div className="city-grid">
           {ranked.map((item, index) => (
