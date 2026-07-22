@@ -29,6 +29,16 @@ type Forecast = {
   factors: Factor[];
   timeline: TimelinePoint[];
   source: string;
+  raw: {
+    dataTime: string;
+    cloud: number;
+    lowCloud: number;
+    midCloud: number;
+    highCloud: number;
+    humidity: number;
+    visibilityKm: string;
+    precipitation: number;
+  };
 };
 
 type City = {
@@ -88,11 +98,21 @@ const fallbackForecast: Forecast = {
   trend: "Live",
   color: "#b9e7ff",
   source: "Open-Meteo 实时预报",
+  raw: {
+    dataTime: "--:--",
+    cloud: 0,
+    lowCloud: 0,
+    midCloud: 0,
+    highCloud: 0,
+    humidity: 0,
+    visibilityKm: "--",
+    precipitation: 0,
+  },
   factors: [
-    { label: "Canvas", value: 0, note: "等待云量数据" },
-    { label: "Tunnel", value: 0, note: "等待低云与能见度数据" },
-    { label: "Atmosphere", value: 0, note: "等待湿度数据" },
-    { label: "Evolution", value: 0, note: "等待逐小时变化数据" },
+    { label: "云幕画布", value: 0, note: "等待云量数据" },
+    { label: "地平线通道", value: 0, note: "等待低云与能见度数据" },
+    { label: "大气通透", value: 0, note: "等待湿度数据" },
+    { label: "变化稳定", value: 0, note: "等待逐小时变化数据" },
   ],
   timeline: [
     { time: "--:--", value: 0, label: "等待数据" },
@@ -142,6 +162,10 @@ function describeCloud(total: number, low: number, high: number) {
   return "云量可用，但云层结构需要继续观察";
 }
 
+function describeRaw(raw: Forecast["raw"]) {
+  return `模型读取 ${raw.dataTime} 附近的逐小时预报：总云量 ${raw.cloud}%，低云 ${raw.lowCloud}%，高云 ${raw.highCloud}%，湿度 ${raw.humidity}%，能见度 ${raw.visibilityKm} km，降水概率 ${raw.precipitation}%。`;
+}
+
 function describeTunnel(low: number, visibility: number, precip: number) {
   if (precip > 55) return "降水概率偏高，透光通道不稳定";
   if (low < 35 && visibility > 12000) return "低云少且能见度好，地平线比较干净";
@@ -184,11 +208,12 @@ function makeForecast(data: OpenMeteoResponse, mode: Mode): Forecast {
   const precip = at(hourly.precipitation_probability, targetIndex, 0);
   const cloudPrev = at(hourly.cloud_cover, prevIndex, cloud);
   const cloudNext = at(hourly.cloud_cover, nextIndex, cloud);
+  const dataTime = times[targetIndex] ?? "";
 
-  const canvas = clamp(96 - Math.abs(cloud - 52) * 1.22 + high * 0.2 + mid * 0.08 - low * 0.28);
-  const tunnel = clamp(94 - low * 0.72 - precip * 0.52 + Math.min(visibility / 900, 18));
-  const atmosphere = clamp(92 - Math.abs(humidity - 62) * 0.9 + Math.min(visibility / 1200, 12) - precip * 0.25);
-  const evolution = clamp(88 - Math.abs(cloudNext - cloudPrev) * 1.25 - precip * 0.18 + Math.min(high, 45) * 0.12);
+  const canvas = clamp(92 - Math.abs(cloud - 58) * 1.05 + high * 0.24 + mid * 0.12 - Math.max(low - 42, 0) * 0.48);
+  const tunnel = clamp(92 - low * 0.62 - precip * 0.62 + Math.min(visibility / 1000, 16));
+  const atmosphere = clamp(90 - Math.abs(humidity - 64) * 0.72 + Math.min(visibility / 1500, 10) - precip * 0.35);
+  const evolution = clamp(86 - Math.abs(cloudNext - cloudPrev) * 1.05 - precip * 0.22 + Math.min(high, 55) * 0.16);
   const score = clamp(canvas * 0.34 + tunnel * 0.3 + atmosphere * 0.2 + evolution * 0.16);
   const confidence = clamp(82 - precip * 0.22 - Math.abs(cloudNext - cloudPrev) * 0.35 + (data.generationtime_ms ? 5 : 0), 38, 92);
   const timeline = offsets.map((offset, index) => {
@@ -215,18 +240,37 @@ function makeForecast(data: OpenMeteoResponse, mode: Mode): Forecast {
     score,
     confidence,
     verdict: makeVerdict(score, mode),
-    summary: `${describeCloud(cloud, low, high)}；${describeTunnel(low, visibility, precip)}。当前云量 ${Math.round(cloud)}%，湿度 ${Math.round(humidity)}%，能见度 ${(visibility / 1000).toFixed(1)} km。`,
+    summary: `${describeCloud(cloud, low, high)}；${describeTunnel(low, visibility, precip)}。${describeRaw({
+      dataTime: formatTime(dataTime),
+      cloud: Math.round(cloud),
+      lowCloud: Math.round(low),
+      midCloud: Math.round(mid),
+      highCloud: Math.round(high),
+      humidity: Math.round(humidity),
+      visibilityKm: (visibility / 1000).toFixed(1),
+      precipitation: Math.round(precip),
+    })}`,
     peak: peakPoint?.time ?? formatTime(target.toISOString()),
     sunTime: formatTime(eventTime),
     updatedAt: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }),
     trend: "实时",
     color,
     source: "Open-Meteo 实时预报",
+    raw: {
+      dataTime: formatTime(dataTime),
+      cloud: Math.round(cloud),
+      lowCloud: Math.round(low),
+      midCloud: Math.round(mid),
+      highCloud: Math.round(high),
+      humidity: Math.round(humidity),
+      visibilityKm: (visibility / 1000).toFixed(1),
+      precipitation: Math.round(precip),
+    },
     factors: [
-      { label: "Canvas", value: canvas, note: describeCloud(cloud, low, high) },
-      { label: "Tunnel", value: tunnel, note: describeTunnel(low, visibility, precip) },
-      { label: "Atmosphere", value: atmosphere, note: describeAtmosphere(humidity, visibility) },
-      { label: "Evolution", value: evolution, note: "基于峰值前后逐小时云量变化估算窗口稳定性" },
+      { label: "云幕画布", value: canvas, note: "总云量不能太空也不能太厚，高云和中云越能承接霞光越好" },
+      { label: "地平线通道", value: tunnel, note: "低云、降水和能见度决定太阳低角度光线能不能穿进来" },
+      { label: "大气通透", value: atmosphere, note: describeAtmosphere(humidity, visibility) },
+      { label: "变化稳定", value: evolution, note: "基于峰值前后逐小时云量变化估算窗口稳定性" },
     ],
     timeline,
   };
@@ -431,8 +475,32 @@ export default function Home() {
 
       <section className="content-band">
         <div className="section-heading">
-          <p className="eyebrow">Why this score</p>
-          <h2>四个因子解释今天的天空</h2>
+          <p className="eyebrow">Model inputs</p>
+          <h2>真实气象输入</h2>
+        </div>
+        <div className="raw-grid">
+          {[
+            ["预报小时", forecast.raw.dataTime],
+            ["总云量", `${forecast.raw.cloud}%`],
+            ["低云", `${forecast.raw.lowCloud}%`],
+            ["中云", `${forecast.raw.midCloud}%`],
+            ["高云", `${forecast.raw.highCloud}%`],
+            ["湿度", `${forecast.raw.humidity}%`],
+            ["能见度", `${forecast.raw.visibilityKm} km`],
+            ["降水概率", `${forecast.raw.precipitation}%`],
+          ].map(([label, value]) => (
+            <article className="raw-card" key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="content-band">
+        <div className="section-heading">
+          <p className="eyebrow">Score factors</p>
+          <h2>霞光指数拆解</h2>
         </div>
         <div className="factor-grid">
           {forecast.factors.map((factor) => (
@@ -452,8 +520,8 @@ export default function Home() {
 
       <section className="content-band timeline-band">
         <div className="section-heading">
-          <p className="eyebrow">Sky timeline</p>
-          <h2>{mode === "sunset" ? "日落前后 80 分钟" : "日出前后 70 分钟"}</h2>
+          <p className="eyebrow">Peak timeline</p>
+          <h2>{mode === "sunset" ? "日落前后关键时刻" : "日出前后关键时刻"}</h2>
         </div>
         <div className="timeline">
           {forecast.timeline.map((point) => (

@@ -356,10 +356,37 @@ button {
 }
 
 .factor-grid,
+.raw-grid,
 .city-grid {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.raw-grid {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
+.raw-card {
+  background: rgba(247, 241, 223, 0.055);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 20px;
+  min-height: 118px;
+  padding: 14px;
+}
+
+.raw-card span {
+  color: var(--muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+}
+
+.raw-card strong {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: clamp(24px, 2.6vw, 40px);
+  font-weight: 500;
+  line-height: 0.95;
 }
 
 .factor-card {
@@ -536,6 +563,10 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .raw-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .city-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -585,6 +616,7 @@ button {
   }
 
   .factor-grid,
+  .raw-grid,
   .timeline,
   .city-grid,
   .feedback-band,
