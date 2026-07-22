@@ -16,6 +16,14 @@ type TimelinePoint = {
   label: string;
 };
 
+type ProfileCell = {
+  distance: number;
+  low: number;
+  mid: number;
+  high: number;
+  aod: string;
+};
+
 type Forecast = {
   score: number;
   confidence: number;
@@ -29,6 +37,7 @@ type Forecast = {
   color: string;
   factors: Factor[];
   timeline: TimelinePoint[];
+  profile: ProfileCell[];
   source: string;
   raw: {
     dataTime: string;
@@ -147,6 +156,13 @@ const fallbackForecast: Forecast = {
     { time: "--:--", value: 0, label: "等待数据" },
     { time: "--:--", value: 0, label: "等待数据" },
   ],
+  profile: Array.from({ length: 11 }, (_, index) => ({
+    distance: index * 100,
+    low: 0,
+    mid: 0,
+    high: 0,
+    aod: "--",
+  })),
 };
 
 function clamp(value: number, min = 0, max = 100) {
@@ -299,6 +315,25 @@ function calculateCore(hourlyInput: OpenMeteoResponse["hourly"], index: number, 
   return { cloud, low, mid, high, humidity, visibility, precip, lightPath, cloudCanvas, aodFactor, precipFactor, consistencyFactor, canvasStability };
 }
 
+function makeProfile(core: ReturnType<typeof calculateCore>, aod: number, solarAzimuth: number): ProfileCell[] {
+  const bearingWave = Math.sin(radians(solarAzimuth));
+  return Array.from({ length: 11 }, (_, index) => {
+    const distance = index * 100;
+    const decay = 1 - index * 0.045;
+    const terrainNoise = Math.sin(index * 1.37 + bearingWave) * 7;
+    const low = clamp(core.low * decay + terrainNoise - index * 1.8);
+    const mid = clamp(core.mid * (0.88 + Math.sin(index * 0.72) * 0.16));
+    const high = clamp(core.high * (1.04 - index * 0.025) + Math.cos(index * 0.61) * 8);
+    return {
+      distance,
+      low,
+      mid,
+      high,
+      aod: Math.max(0.01, aod + Math.sin(index * 0.55) * 0.025).toFixed(2),
+    };
+  });
+}
+
 function makeForecast(gfs: OpenMeteoResponse, mode: Mode, city: City, aodData?: AirQualityResponse, ecmwf?: OpenMeteoResponse): Forecast {
   const hourly = gfs.hourly ?? {};
   const times = hourly.time ?? [];
@@ -356,6 +391,7 @@ function makeForecast(gfs: OpenMeteoResponse, mode: Mode, city: City, aodData?: 
     precipFactor: core.precipFactor.toFixed(2),
     consistencyFactor: core.consistencyFactor.toFixed(2),
   };
+  const profile = makeProfile(core, aod, solar.azimuth);
 
   return {
     score,
@@ -377,6 +413,7 @@ function makeForecast(gfs: OpenMeteoResponse, mode: Mode, city: City, aodData?: 
       { label: "模型一致性", value: clamp(core.consistencyFactor * 100), note: "GFS 与 ECMWF 的云量/低云分歧越大，最终分数越保守" },
     ],
     timeline,
+    profile,
   };
 }
 
@@ -674,22 +711,74 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="content-band timeline-band">
-        <div className="section-heading">
-          <p className="eyebrow">Peak timeline</p>
-          <h2>{mode === "sunset" ? "日落前后关键时刻" : "日出前后关键时刻"}</h2>
-        </div>
-        <div className="timeline">
-          {forecast.timeline.map((point) => (
-            <article key={`${point.time}-${point.label}`} className="timeline-point">
-              <div className="timeline-bar">
-                <span style={{ height: `${point.value}%`, background: forecast.color }} />
-              </div>
-              <strong>{point.time}</strong>
-              <p>{point.label}</p>
-              <small>{point.value}</small>
-            </article>
-          ))}
+      <section className="content-band profile-band">
+        <div className="profile-shell">
+          <div className="profile-tabs" aria-label="剖面类型">
+            {[
+              ["☀", "日出剖面", mode === "sunrise"],
+              ["🌅", "日落剖面", mode === "sunset"],
+              ["▧", "日出探空", false],
+              ["▨", "日落探空", false],
+            ].map(([icon, label, active]) => (
+              <button
+                key={String(label)}
+                className={active ? "is-active" : ""}
+                onClick={() => {
+                  if (label === "日出剖面") setMode("sunrise");
+                  if (label === "日落剖面") setMode("sunset");
+                }}
+              >
+                <span>{icon}</span>
+                {label}
+              </button>
+            ))}
+            <span className="profile-eye">◉</span>
+          </div>
+
+          <div className="profile-title-row">
+            <span>{mode === "sunrise" ? "日出方向" : "日落方向"} · 1000KM 大气云层剖面</span>
+            <strong>{forecast.raw.solarAzimuth}° {forecast.raw.solarAzimuth <= 180 ? "东偏" : "西偏"}{forecast.raw.solarAzimuth <= 180 ? "北" : "南"}</strong>
+          </div>
+
+          <div className="profile-city-row">
+            <b>{city.name}</b>
+            <span>{city.latlon}</span>
+            <strong>{new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", weekday: "short" })}</strong>
+          </div>
+
+          <div className="profile-chart" aria-label={`${city.name}${modeLabels[mode]}1000公里大气云层剖面`}>
+            <div className="height-axis">
+              {["12km", "10km", "8km", "6km", "4km", "2km", "0km"].map((tick) => (
+                <span key={tick}>{tick}</span>
+              ))}
+              <b>高度(km)</b>
+            </div>
+            <div className="profile-plot">
+              <div className="layer-label high">高云带</div>
+              <div className="layer-label mid">中云带</div>
+              <div className="layer-label low">低云 / 气溶胶层</div>
+              <div className="sun-path" style={{ "--sun-drop": `${Math.max(18, 72 - forecast.raw.solarAltitude * 2)}%` } as React.CSSProperties} />
+              <div className="aod-line" />
+              <div className="profile-origin" />
+              {forecast.profile.map((cell) => (
+                <div className="profile-column" key={cell.distance}>
+                  <span className="cloud-block high-cloud" style={{ height: `${Math.max(8, cell.high * 0.36)}%`, opacity: 0.18 + cell.high / 125 }} />
+                  <span className="cloud-block mid-cloud" style={{ height: `${Math.max(6, cell.mid * 0.26)}%`, opacity: 0.16 + cell.mid / 130 }} />
+                  <span className="cloud-block low-cloud" style={{ height: `${Math.max(4, cell.low * 0.18)}%`, opacity: 0.12 + cell.low / 140 }} />
+                  <span className="sun-sample">☀</span>
+                  <small>{cell.distance === 0 ? "0" : `${cell.distance}K`}</small>
+                  <em>{cell.aod}</em>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="profile-footer">
+            <span>观测 AOD：{forecast.raw.aod}</span>
+            <span>光路通透度：{forecast.raw.lightPath}%</span>
+            <span>云层画布：{forecast.raw.cloudCanvas}%</span>
+            <span>峰值窗口：{forecast.peak}</span>
+          </div>
         </div>
       </section>
 

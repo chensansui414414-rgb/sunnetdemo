@@ -280,7 +280,6 @@ button {
 
 .verdict-panel,
 .factor-card,
-.timeline,
 .feedback-band {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -478,52 +477,265 @@ button {
   margin: 0;
 }
 
-.timeline-band {
+.profile-band {
   padding-top: 20px;
 }
 
-.timeline {
-  align-items: end;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  min-height: 360px;
-  padding: 18px;
-}
-
-.timeline-point {
-  display: grid;
-  gap: 8px;
-}
-
-.timeline-bar {
-  align-items: end;
+.profile-shell {
   background:
-    linear-gradient(rgba(247, 241, 223, 0.08) 1px, transparent 1px),
-    rgba(247, 241, 223, 0.05);
-  background-size: 100% 28px, auto;
-  display: flex;
-  height: 210px;
+    linear-gradient(rgba(247, 241, 223, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(247, 241, 223, 0.05) 1px, transparent 1px),
+    rgba(3, 8, 18, 0.82);
+  background-size: 100% 72px, 82px 100%, auto;
+  border: 1px solid rgba(247, 241, 223, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 106, 61, 0.12);
   overflow: hidden;
 }
 
-.timeline-bar span {
-  display: block;
-  min-height: 12px;
-  transition: height 220ms ease;
-  width: 100%;
+.profile-tabs {
+  align-items: stretch;
+  background: rgba(16, 16, 15, 0.92);
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) 44px;
 }
 
-.timeline-point strong {
+.profile-tabs button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-bottom: 4px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  min-height: 64px;
+  padding: 10px;
+}
+
+.profile-tabs button.is-active {
+  border-bottom-color: var(--coral);
+  color: var(--paper);
+}
+
+.profile-tabs button span {
+  font-size: 22px;
+}
+
+.profile-eye {
+  align-items: center;
+  color: var(--paper);
+  display: flex;
+  justify-content: center;
+}
+
+.profile-title-row,
+.profile-city-row,
+.profile-footer {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 14px 28px;
+}
+
+.profile-title-row {
+  background: rgba(247, 241, 223, 0.035);
+  color: var(--muted);
   font-family: var(--font-geist-mono), monospace;
-  font-size: 26px;
+  font-size: clamp(14px, 2vw, 24px);
+}
+
+.profile-title-row strong {
+  color: #ff9a73;
   font-weight: 500;
 }
 
-.timeline-point p,
-.timeline-point small {
+.profile-city-row {
+  background: rgba(2, 8, 23, 0.78);
+  border-bottom: 1px solid rgba(247, 241, 223, 0.08);
   color: var(--muted);
-  margin: 0;
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.profile-city-row b {
+  color: #ff8c5a;
+  font-size: 20px;
+}
+
+.profile-city-row strong {
+  color: var(--muted);
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.profile-chart {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  min-height: 560px;
+  padding: 26px 28px 10px;
+}
+
+.height-axis {
+  color: rgba(247, 241, 223, 0.45);
+  display: grid;
+  font-family: var(--font-geist-mono), monospace;
+  grid-template-rows: repeat(7, 1fr);
+  position: relative;
+  text-align: right;
+}
+
+.height-axis span {
+  padding-right: 14px;
+}
+
+.height-axis b {
+  bottom: 28px;
+  color: rgba(247, 241, 223, 0.32);
+  font-weight: 400;
+  left: 0;
+  position: absolute;
+  transform: rotate(-90deg);
+  transform-origin: left center;
+}
+
+.profile-plot {
+  display: grid;
+  grid-template-columns: repeat(11, minmax(64px, 1fr));
+  min-width: 860px;
+  overflow: hidden;
+  position: relative;
+}
+
+.profile-plot::before {
+  background:
+    linear-gradient(rgba(247, 241, 223, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(247, 241, 223, 0.06) 1px, transparent 1px);
+  background-size: 100% 78px, calc(100% / 10) 100%;
+  content: "";
+  inset: 0 0 50px;
+  pointer-events: none;
+  position: absolute;
+}
+
+.profile-plot::after {
+  background: linear-gradient(100deg, rgba(255, 191, 71, 0.55), rgba(255, 191, 71, 0.08));
+  content: "";
+  height: 2px;
+  left: 2%;
+  opacity: 0.72;
+  position: absolute;
+  right: 0;
+  top: var(--sun-drop, 54%);
+  transform: rotate(15deg);
+  transform-origin: left center;
+}
+
+.layer-label {
+  color: rgba(247, 241, 223, 0.22);
+  font-family: var(--font-geist-mono), monospace;
+  left: 12px;
+  position: absolute;
+  z-index: 2;
+}
+
+.layer-label.high {
+  top: 24%;
+}
+
+.layer-label.mid {
+  top: 54%;
+}
+
+.layer-label.low {
+  bottom: 86px;
+}
+
+.sun-path {
+  display: none;
+}
+
+.aod-line {
+  border-top: 3px dashed rgba(255, 148, 82, 0.68);
+  bottom: 78px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  z-index: 3;
+}
+
+.profile-origin {
+  background: #ff7b2f;
+  border: 8px solid rgba(255, 123, 47, 0.28);
+  border-radius: 50%;
+  bottom: 50px;
+  box-shadow: 0 0 0 2px rgba(255, 123, 47, 0.75), 0 0 36px rgba(255, 123, 47, 0.8);
+  height: 30px;
+  left: -15px;
+  position: absolute;
+  width: 30px;
+  z-index: 5;
+}
+
+.profile-column {
+  border-left: 1px solid rgba(247, 241, 223, 0.08);
+  min-height: 500px;
+  position: relative;
+}
+
+.cloud-block {
+  left: 8%;
+  position: absolute;
+  right: 8%;
+}
+
+.high-cloud {
+  background: linear-gradient(#f5e86e, rgba(245, 232, 110, 0.1));
+  top: 10%;
+}
+
+.mid-cloud {
+  background: linear-gradient(rgba(255, 155, 62, 0.55), rgba(255, 155, 62, 0.08));
+  bottom: 34%;
+}
+
+.low-cloud {
+  background: linear-gradient(rgba(185, 231, 255, 0.32), rgba(185, 231, 255, 0.05));
+  bottom: 70px;
+}
+
+.sun-sample {
+  color: rgba(255, 205, 91, 0.35);
+  font-size: 26px;
+  left: 50%;
+  position: absolute;
+  top: 35%;
+  transform: translateX(-50%);
+}
+
+.profile-column small,
+.profile-column em {
+  bottom: 16px;
+  color: rgba(247, 241, 223, 0.42);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  font-style: normal;
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+.profile-column em {
+  bottom: -2px;
+  color: rgba(255, 148, 82, 0.86);
+}
+
+.profile-footer {
+  background: rgba(16, 16, 15, 0.78);
+  color: var(--muted);
+  flex-wrap: wrap;
+  font-family: var(--font-geist-mono), monospace;
 }
 
 .city-board {
@@ -673,7 +885,6 @@ button {
   .factor-grid,
   .raw-grid,
   .algorithm-grid,
-  .timeline,
   .city-grid,
   .feedback-band,
   .feedback-actions {
