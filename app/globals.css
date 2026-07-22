@@ -179,6 +179,22 @@ button {
   gap: 8px;
 }
 
+.source-strip {
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.source-strip span {
+  border: 1px solid var(--line);
+  background: rgba(247, 241, 223, 0.055);
+  padding: 7px 9px;
+}
+
 .score-stage {
   display: grid;
   min-height: 540px;

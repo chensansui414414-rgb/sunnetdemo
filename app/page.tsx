@@ -10,6 +10,12 @@ type Factor = {
   note: string;
 };
 
+type TimelinePoint = {
+  time: string;
+  value: number;
+  label: string;
+};
+
 type Forecast = {
   score: number;
   confidence: number;
@@ -21,324 +27,49 @@ type Forecast = {
   trend: string;
   color: string;
   factors: Factor[];
-  timeline: { time: string; value: number; label: string }[];
+  timeline: TimelinePoint[];
+  source: string;
 };
 
-type CityForecast = {
+type City = {
   name: string;
   en: string;
   latlon: string;
+  latitude: number;
+  longitude: number;
+};
+
+type CityForecast = City & {
   sunset: Forecast;
   sunrise: Forecast;
 };
 
-const cities: CityForecast[] = [
-  {
-    name: "南京",
-    en: "NANJING",
-    latlon: "32.06N / 118.79E",
-    sunset: {
-      score: 82,
-      confidence: 76,
-      verdict: "今晚，值得等一场霞光。",
-      summary: "西向低云被切开，湿度和高空薄云都在可用区间，日落后 18 分钟最容易出颜色。",
-      peak: "19:22",
-      sunTime: "19:04",
-      updatedAt: "16:40",
-      trend: "+12",
-      color: "#ff6a3d",
-      factors: [
-        { label: "Canvas", value: 86, note: "西侧云量留出足够透光窗口" },
-        { label: "Tunnel", value: 78, note: "近地平线遮挡较少" },
-        { label: "Atmosphere", value: 81, note: "湿度和气溶胶利于暖色散射" },
-        { label: "Evolution", value: 72, note: "云系移动速度偏稳" },
-      ],
-      timeline: [
-        { time: "18:40", value: 46, label: "暖色预热" },
-        { time: "18:58", value: 68, label: "西天开口" },
-        { time: "19:22", value: 82, label: "峰值窗口" },
-        { time: "19:42", value: 53, label: "余晖回落" },
-      ],
-    },
-    sunrise: {
-      score: 67,
-      confidence: 71,
-      verdict: "明早有机会，但别把闹钟压太死。",
-      summary: "低层云量略高，若 04:50 前后云底打开，会出现短暂粉橙色带。",
-      peak: "05:07",
-      sunTime: "05:15",
-      updatedAt: "16:40",
-      trend: "+5",
-      color: "#ffd166",
-      factors: [
-        { label: "Canvas", value: 64, note: "云底偏厚但有层次" },
-        { label: "Tunnel", value: 70, note: "东南向视野相对干净" },
-        { label: "Atmosphere", value: 69, note: "水汽充足，色彩偏柔" },
-        { label: "Evolution", value: 62, note: "窗口较短，变化快" },
-      ],
-      timeline: [
-        { time: "04:42", value: 35, label: "天光抬升" },
-        { time: "04:56", value: 58, label: "云缝成形" },
-        { time: "05:07", value: 67, label: "峰值窗口" },
-        { time: "05:25", value: 41, label: "转入晨光" },
-      ],
-    },
-  },
-  {
-    name: "上海",
-    en: "SHANGHAI",
-    latlon: "31.23N / 121.47E",
-    sunset: {
-      score: 74,
-      confidence: 73,
-      verdict: "有漂亮边缘光，颜色偏克制。",
-      summary: "海风带来的湿度不错，但西侧中云略密，适合看金边和云缝亮带。",
-      peak: "18:59",
-      sunTime: "18:43",
-      updatedAt: "16:35",
-      trend: "+8",
-      color: "#ff7d51",
-      factors: [
-        { label: "Canvas", value: 72, note: "中云覆盖略多" },
-        { label: "Tunnel", value: 68, note: "低空透光通道一般" },
-        { label: "Atmosphere", value: 84, note: "海风湿度利于扩散" },
-        { label: "Evolution", value: 71, note: "云层移动温和" },
-      ],
-      timeline: [
-        { time: "18:24", value: 42, label: "云边变亮" },
-        { time: "18:43", value: 61, label: "日落" },
-        { time: "18:59", value: 74, label: "峰值窗口" },
-        { time: "19:18", value: 47, label: "蓝调接管" },
-      ],
-    },
-    sunrise: {
-      score: 58,
-      confidence: 66,
-      verdict: "明早偏朦胧，适合拍城市剪影。",
-      summary: "东侧湿度高，色彩可能被雾化，建筑边缘和江面反光会更稳定。",
-      peak: "04:58",
-      sunTime: "05:06",
-      updatedAt: "16:35",
-      trend: "-3",
-      color: "#a7d8ff",
-      factors: [
-        { label: "Canvas", value: 57, note: "低云偏碎" },
-        { label: "Tunnel", value: 55, note: "地平线通透度不足" },
-        { label: "Atmosphere", value: 76, note: "水汽充足但易雾化" },
-        { label: "Evolution", value: 51, note: "云形变化不确定" },
-      ],
-      timeline: [
-        { time: "04:30", value: 28, label: "灰蓝天光" },
-        { time: "04:48", value: 49, label: "雾面泛亮" },
-        { time: "04:58", value: 58, label: "峰值窗口" },
-        { time: "05:16", value: 39, label: "晨雾增强" },
-      ],
-    },
-  },
-  {
-    name: "北京",
-    en: "BEIJING",
-    latlon: "39.90N / 116.40E",
-    sunset: {
-      score: 63,
-      confidence: 69,
-      verdict: "有概率出金色云底，别期待满天烧。",
-      summary: "高空云形不错，但近地层通透度一般，适合找开阔西向机位。",
-      peak: "19:36",
-      sunTime: "19:19",
-      updatedAt: "16:30",
-      trend: "+4",
-      color: "#f5b04c",
-      factors: [
-        { label: "Canvas", value: 70, note: "高云形态可用" },
-        { label: "Tunnel", value: 54, note: "低空透明度一般" },
-        { label: "Atmosphere", value: 61, note: "散射条件中等" },
-        { label: "Evolution", value: 66, note: "后半段可能改善" },
-      ],
-      timeline: [
-        { time: "18:58", value: 32, label: "西侧发白" },
-        { time: "19:19", value: 52, label: "日落" },
-        { time: "19:36", value: 63, label: "峰值窗口" },
-        { time: "19:55", value: 45, label: "色温降低" },
-      ],
-    },
-    sunrise: {
-      score: 72,
-      confidence: 74,
-      verdict: "明早更值得冲，北方天空会更干净。",
-      summary: "夜间风场改善通透度，东方云带薄而连续，适合城市天际线。",
-      peak: "04:55",
-      sunTime: "05:03",
-      updatedAt: "16:30",
-      trend: "+14",
-      color: "#ff9f68",
-      factors: [
-        { label: "Canvas", value: 75, note: "薄云铺展均匀" },
-        { label: "Tunnel", value: 77, note: "东方低空更通透" },
-        { label: "Atmosphere", value: 69, note: "干空气带来清晰边界" },
-        { label: "Evolution", value: 67, note: "峰值维持约 10 分钟" },
-      ],
-      timeline: [
-        { time: "04:24", value: 31, label: "地平线泛亮" },
-        { time: "04:42", value: 59, label: "云带染色" },
-        { time: "04:55", value: 72, label: "峰值窗口" },
-        { time: "05:12", value: 48, label: "亮度盖过色彩" },
-      ],
-    },
-  },
-  {
-    name: "广州",
-    en: "GUANGZHOU",
-    latlon: "23.13N / 113.26E",
-    sunset: {
-      score: 69,
-      confidence: 65,
-      verdict: "南方湿热的粉紫调，有戏但窗口短。",
-      summary: "对流云正在减弱，若西南侧云团散开，日落后会有一段高饱和色。",
-      peak: "19:03",
-      sunTime: "18:49",
-      updatedAt: "16:45",
-      trend: "+9",
-      color: "#f06c9b",
-      factors: [
-        { label: "Canvas", value: 68, note: "积云边界立体" },
-        { label: "Tunnel", value: 63, note: "西南低空仍有遮挡" },
-        { label: "Atmosphere", value: 79, note: "水汽让粉紫更明显" },
-        { label: "Evolution", value: 58, note: "对流消散节奏不稳" },
-      ],
-      timeline: [
-        { time: "18:30", value: 38, label: "云塔退场" },
-        { time: "18:49", value: 57, label: "日落" },
-        { time: "19:03", value: 69, label: "峰值窗口" },
-        { time: "19:21", value: 44, label: "湿度增厚" },
-      ],
-    },
-    sunrise: {
-      score: 51,
-      confidence: 61,
-      verdict: "明早偏灰，适合留在窗边观察。",
-      summary: "东侧云底偏低，若局地阵雨结束较早，会出现浅粉色边缘。",
-      peak: "05:49",
-      sunTime: "05:56",
-      updatedAt: "16:45",
-      trend: "-6",
-      color: "#c0b7ff",
-      factors: [
-        { label: "Canvas", value: 55, note: "云层厚度偏大" },
-        { label: "Tunnel", value: 46, note: "低空遮挡明显" },
-        { label: "Atmosphere", value: 68, note: "湿度高但透光弱" },
-        { label: "Evolution", value: 45, note: "降水残留不确定" },
-      ],
-      timeline: [
-        { time: "05:18", value: 22, label: "云底偏暗" },
-        { time: "05:38", value: 42, label: "边缘转粉" },
-        { time: "05:49", value: 51, label: "峰值窗口" },
-        { time: "06:08", value: 33, label: "日光漫射" },
-      ],
-    },
-  },
-  {
-    name: "南通",
-    en: "NANTONG",
-    latlon: "31.98N / 120.89E",
-    sunset: {
-      score: 79,
-      confidence: 72,
-      verdict: "江海交界的晚霞条件很好。",
-      summary: "低层通道清楚，高云薄而连续，色彩会从橙红过渡到玫瑰粉。",
-      peak: "18:57",
-      sunTime: "18:40",
-      updatedAt: "16:38",
-      trend: "+11",
-      color: "#ff5d4d",
-      factors: [
-        { label: "Canvas", value: 82, note: "高云铺展漂亮" },
-        { label: "Tunnel", value: 76, note: "西北低空通透" },
-        { label: "Atmosphere", value: 74, note: "江面水汽柔化色阶" },
-        { label: "Evolution", value: 70, note: "云带移速稳定" },
-      ],
-      timeline: [
-        { time: "18:20", value: 43, label: "金边出现" },
-        { time: "18:40", value: 64, label: "日落" },
-        { time: "18:57", value: 79, label: "峰值窗口" },
-        { time: "19:17", value: 50, label: "粉色淡出" },
-      ],
-    },
-    sunrise: {
-      score: 62,
-      confidence: 68,
-      verdict: "明早有温柔色，不一定炸裂。",
-      summary: "海上低云略厚，东侧云缝若维持，会出现一条干净橙线。",
-      peak: "04:54",
-      sunTime: "05:02",
-      updatedAt: "16:38",
-      trend: "+2",
-      color: "#ffc857",
-      factors: [
-        { label: "Canvas", value: 60, note: "云层偏低但有缝" },
-        { label: "Tunnel", value: 66, note: "东向通道尚可" },
-        { label: "Atmosphere", value: 67, note: "水汽带来柔光" },
-        { label: "Evolution", value: 54, note: "峰值较窄" },
-      ],
-      timeline: [
-        { time: "04:25", value: 27, label: "冷色天光" },
-        { time: "04:44", value: 51, label: "橙线出现" },
-        { time: "04:54", value: 62, label: "峰值窗口" },
-        { time: "05:13", value: 38, label: "云层增亮" },
-      ],
-    },
-  },
-  {
-    name: "成都",
-    en: "CHENGDU",
-    latlon: "30.57N / 104.07E",
-    sunset: {
-      score: 56,
-      confidence: 64,
-      verdict: "云层厚，可能只有短促的缝隙光。",
-      summary: "盆地低云偏厚，高空颜色不容易打下来，建议关注西边云缝而非整片天空。",
-      peak: "19:44",
-      sunTime: "19:28",
-      updatedAt: "16:42",
-      trend: "-4",
-      color: "#b5a6ff",
-      factors: [
-        { label: "Canvas", value: 52, note: "云幕偏厚" },
-        { label: "Tunnel", value: 49, note: "低空通道不足" },
-        { label: "Atmosphere", value: 66, note: "湿度足但散射过强" },
-        { label: "Evolution", value: 57, note: "后段或有小窗口" },
-      ],
-      timeline: [
-        { time: "19:06", value: 24, label: "云幕压低" },
-        { time: "19:28", value: 44, label: "日落" },
-        { time: "19:44", value: 56, label: "峰值窗口" },
-        { time: "20:03", value: 35, label: "余光散掉" },
-      ],
-    },
-    sunrise: {
-      score: 60,
-      confidence: 63,
-      verdict: "明早比今晚稍好，适合看柔和晨霞。",
-      summary: "东侧云底可能在日出前抬升，颜色偏淡，但连续性不错。",
-      peak: "06:04",
-      sunTime: "06:12",
-      updatedAt: "16:42",
-      trend: "+7",
-      color: "#ffb86b",
-      factors: [
-        { label: "Canvas", value: 63, note: "云层有渐变空间" },
-        { label: "Tunnel", value: 58, note: "低空通道一般" },
-        { label: "Atmosphere", value: 64, note: "水汽偏多，颜色柔" },
-        { label: "Evolution", value: 55, note: "云底抬升是关键" },
-      ],
-      timeline: [
-        { time: "05:32", value: 26, label: "灰蓝起色" },
-        { time: "05:52", value: 47, label: "云底抬升" },
-        { time: "06:04", value: 60, label: "峰值窗口" },
-        { time: "06:22", value: 40, label: "晨光铺开" },
-      ],
-    },
-  },
+type OpenMeteoResponse = {
+  hourly?: {
+    time?: string[];
+    cloud_cover?: number[];
+    cloud_cover_low?: number[];
+    cloud_cover_mid?: number[];
+    cloud_cover_high?: number[];
+    relative_humidity_2m?: number[];
+    visibility?: number[];
+    precipitation_probability?: number[];
+    weather_code?: number[];
+  };
+  daily?: {
+    sunrise?: string[];
+    sunset?: string[];
+  };
+  generationtime_ms?: number;
+};
+
+const cityConfigs: City[] = [
+  { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969 },
+  { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737 },
+  { name: "北京", en: "BEIJING", latlon: "39.90N / 116.40E", latitude: 39.9042, longitude: 116.4074 },
+  { name: "广州", en: "GUANGZHOU", latlon: "23.13N / 113.26E", latitude: 23.1291, longitude: 113.2644 },
+  { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943 },
+  { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668 },
 ];
 
 const modeLabels: Record<Mode, string> = {
@@ -346,21 +77,218 @@ const modeLabels: Record<Mode, string> = {
   sunrise: "明早日出",
 };
 
+const fallbackForecast: Forecast = {
+  score: 0,
+  confidence: 0,
+  verdict: "正在读取真实气象数据。",
+  summary: "连接 Open-Meteo 逐小时预报，读取云量、湿度、能见度、降水概率和日出日落时间。",
+  peak: "--:--",
+  sunTime: "--:--",
+  updatedAt: "--:--",
+  trend: "Live",
+  color: "#b9e7ff",
+  source: "Open-Meteo 实时预报",
+  factors: [
+    { label: "Canvas", value: 0, note: "等待云量数据" },
+    { label: "Tunnel", value: 0, note: "等待低云与能见度数据" },
+    { label: "Atmosphere", value: 0, note: "等待湿度数据" },
+    { label: "Evolution", value: 0, note: "等待逐小时变化数据" },
+  ],
+  timeline: [
+    { time: "--:--", value: 0, label: "等待数据" },
+    { time: "--:--", value: 0, label: "等待数据" },
+    { time: "--:--", value: 0, label: "等待数据" },
+    { time: "--:--", value: 0, label: "等待数据" },
+  ],
+};
+
+function clamp(value: number, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function formatTime(value?: string) {
+  if (!value) return "--:--";
+  return value.slice(11, 16);
+}
+
+function addMinutes(value: string, minutes: number) {
+  const date = new Date(value);
+  date.setMinutes(date.getMinutes() + minutes);
+  return date;
+}
+
+function nearestIndex(times: string[] = [], target: Date) {
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  times.forEach((time, index) => {
+    const distance = Math.abs(new Date(time).getTime() - target.getTime());
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+function at(values: number[] | undefined, index: number, fallback = 0) {
+  const value = values?.[index];
+  return Number.isFinite(value) ? Number(value) : fallback;
+}
+
+function describeCloud(total: number, low: number, high: number) {
+  if (low > 75) return "低云偏厚，地平线透光窗口被压缩";
+  if (total >= 35 && total <= 68 && high > 20) return "云量处在可染色区间，高云能承接暖色";
+  if (total < 25) return "天空偏空，颜色载体不足";
+  return "云量可用，但云层结构需要继续观察";
+}
+
+function describeTunnel(low: number, visibility: number, precip: number) {
+  if (precip > 55) return "降水概率偏高，透光通道不稳定";
+  if (low < 35 && visibility > 12000) return "低云少且能见度好，地平线比较干净";
+  if (low > 65) return "低云遮挡明显，峰值窗口可能很短";
+  return "低空通道一般，适合找更开阔的机位";
+}
+
+function describeAtmosphere(humidity: number, visibility: number) {
+  if (humidity >= 50 && humidity <= 75 && visibility > 9000) return "湿度和通透度平衡，利于暖色散射";
+  if (humidity > 82) return "湿度偏高，色彩可能被雾化";
+  if (humidity < 35) return "空气偏干，颜色边界清晰但饱和度有限";
+  return "大气条件中等，颜色表现取决于云缝";
+}
+
+function makeVerdict(score: number, mode: Mode) {
+  if (score >= 82) return mode === "sunset" ? "今晚，值得等一场霞光。" : "明早值得早起，窗口很像样。";
+  if (score >= 72) return mode === "sunset" ? "今晚值得出门，颜色有机会展开。" : "明早有戏，建议提前到位。";
+  if (score >= 60) return "可以蹲守，但别把期待拉满。";
+  if (score >= 45) return "有短暂窗口，适合顺路观察。";
+  return "条件偏弱，今天更适合云上观测。";
+}
+
+function makeForecast(data: OpenMeteoResponse, mode: Mode): Forecast {
+  const hourly = data.hourly ?? {};
+  const times = hourly.time ?? [];
+  const eventTime = mode === "sunset" ? data.daily?.sunset?.[0] : data.daily?.sunrise?.[1] ?? data.daily?.sunrise?.[0];
+  const offsets = mode === "sunset" ? [-40, -10, 18, 38] : [-38, -12, 0, 22];
+  const labels = mode === "sunset" ? ["暖色预热", "日落贴线", "峰值窗口", "余晖回落"] : ["天光抬升", "云底染色", "峰值窗口", "晨光铺开"];
+  const target = eventTime ? addMinutes(eventTime, mode === "sunset" ? 18 : -2) : new Date();
+  const targetIndex = nearestIndex(times, target);
+  const prevIndex = Math.max(0, targetIndex - 1);
+  const nextIndex = Math.min(Math.max(0, times.length - 1), targetIndex + 1);
+
+  const cloud = at(hourly.cloud_cover, targetIndex, 50);
+  const low = at(hourly.cloud_cover_low, targetIndex, cloud * 0.55);
+  const mid = at(hourly.cloud_cover_mid, targetIndex, cloud * 0.35);
+  const high = at(hourly.cloud_cover_high, targetIndex, cloud * 0.25);
+  const humidity = at(hourly.relative_humidity_2m, targetIndex, 60);
+  const visibility = at(hourly.visibility, targetIndex, 10000);
+  const precip = at(hourly.precipitation_probability, targetIndex, 0);
+  const cloudPrev = at(hourly.cloud_cover, prevIndex, cloud);
+  const cloudNext = at(hourly.cloud_cover, nextIndex, cloud);
+
+  const canvas = clamp(96 - Math.abs(cloud - 52) * 1.22 + high * 0.2 + mid * 0.08 - low * 0.28);
+  const tunnel = clamp(94 - low * 0.72 - precip * 0.52 + Math.min(visibility / 900, 18));
+  const atmosphere = clamp(92 - Math.abs(humidity - 62) * 0.9 + Math.min(visibility / 1200, 12) - precip * 0.25);
+  const evolution = clamp(88 - Math.abs(cloudNext - cloudPrev) * 1.25 - precip * 0.18 + Math.min(high, 45) * 0.12);
+  const score = clamp(canvas * 0.34 + tunnel * 0.3 + atmosphere * 0.2 + evolution * 0.16);
+  const confidence = clamp(82 - precip * 0.22 - Math.abs(cloudNext - cloudPrev) * 0.35 + (data.generationtime_ms ? 5 : 0), 38, 92);
+  const timeline = offsets.map((offset, index) => {
+    const itemIndex = eventTime ? nearestIndex(times, addMinutes(eventTime, offset)) : targetIndex;
+    const pointCloud = at(hourly.cloud_cover, itemIndex, cloud);
+    const pointLow = at(hourly.cloud_cover_low, itemIndex, low);
+    const pointHigh = at(hourly.cloud_cover_high, itemIndex, high);
+    const pointHumidity = at(hourly.relative_humidity_2m, itemIndex, humidity);
+    const pointPrecip = at(hourly.precipitation_probability, itemIndex, precip);
+    const value = clamp(
+      90 - Math.abs(pointCloud - 52) * 1.1 - pointLow * 0.42 + pointHigh * 0.18 - Math.abs(pointHumidity - 62) * 0.42 - pointPrecip * 0.4,
+    );
+    return {
+      time: eventTime ? formatTime(addMinutes(eventTime, offset).toISOString()) : "--:--",
+      value,
+      label: labels[index],
+    };
+  });
+
+  const peakPoint = timeline.reduce((best, item) => (item.value > best.value ? item : best), timeline[0]);
+  const color = score >= 75 ? "#ff6a3d" : score >= 62 ? "#ffc857" : score >= 48 ? "#b9e7ff" : "#b5a6ff";
+
+  return {
+    score,
+    confidence,
+    verdict: makeVerdict(score, mode),
+    summary: `${describeCloud(cloud, low, high)}；${describeTunnel(low, visibility, precip)}。当前云量 ${Math.round(cloud)}%，湿度 ${Math.round(humidity)}%，能见度 ${(visibility / 1000).toFixed(1)} km。`,
+    peak: peakPoint?.time ?? formatTime(target.toISOString()),
+    sunTime: formatTime(eventTime),
+    updatedAt: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }),
+    trend: "实时",
+    color,
+    source: "Open-Meteo 实时预报",
+    factors: [
+      { label: "Canvas", value: canvas, note: describeCloud(cloud, low, high) },
+      { label: "Tunnel", value: tunnel, note: describeTunnel(low, visibility, precip) },
+      { label: "Atmosphere", value: atmosphere, note: describeAtmosphere(humidity, visibility) },
+      { label: "Evolution", value: evolution, note: "基于峰值前后逐小时云量变化估算窗口稳定性" },
+    ],
+    timeline,
+  };
+}
+
+async function fetchCityForecast(city: City): Promise<CityForecast> {
+  const params = new URLSearchParams({
+    latitude: String(city.latitude),
+    longitude: String(city.longitude),
+    timezone: "Asia/Shanghai",
+    forecast_days: "2",
+    hourly: [
+      "cloud_cover",
+      "cloud_cover_low",
+      "cloud_cover_mid",
+      "cloud_cover_high",
+      "relative_humidity_2m",
+      "visibility",
+      "precipitation_probability",
+      "weather_code",
+    ].join(","),
+    daily: "sunrise,sunset",
+  });
+  const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Open-Meteo request failed: ${response.status}`);
+  }
+  const data = (await response.json()) as OpenMeteoResponse;
+  return {
+    ...city,
+    sunset: makeForecast(data, "sunset"),
+    sunrise: makeForecast(data, "sunrise"),
+  };
+}
+
 function getLevel(score: number) {
   if (score >= 80) return "强烈推荐";
   if (score >= 70) return "值得出门";
   if (score >= 60) return "可以蹲守";
-  return "谨慎观察";
+  if (score > 0) return "谨慎观察";
+  return "读取中";
+}
+
+function makeLoadingCity(city: City): CityForecast {
+  return {
+    ...city,
+    sunset: fallbackForecast,
+    sunrise: fallbackForecast,
+  };
 }
 
 export default function Home() {
   const [cityName, setCityName] = useState("南京");
   const [mode, setMode] = useState<Mode>("sunset");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [forecasts, setForecasts] = useState<CityForecast[]>(() => cityConfigs.map(makeLoadingCity));
+  const [loading, setLoading] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
 
   useEffect(() => {
     const storedCity = window.localStorage.getItem("glowcast-city");
-    if (storedCity && cities.some((city) => city.name === storedCity)) {
+    if (storedCity && cityConfigs.some((city) => city.name === storedCity)) {
       setCityName(storedCity);
     }
   }, []);
@@ -369,17 +297,39 @@ export default function Home() {
     window.localStorage.setItem("glowcast-city", cityName);
   }, [cityName]);
 
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      setLoading(true);
+      setDataError(null);
+      try {
+        const live = await Promise.all(cityConfigs.map(fetchCityForecast));
+        if (active) setForecasts(live);
+      } catch {
+        if (active) setDataError("真实气象数据暂时读取失败，请稍后刷新。");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    load();
+    const timer = window.setInterval(load, 1000 * 60 * 30);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const city = useMemo(
-    () => cities.find((item) => item.name === cityName) ?? cities[0],
-    [cityName],
+    () => forecasts.find((item) => item.name === cityName) ?? forecasts[0],
+    [cityName, forecasts],
   );
   const forecast = city[mode];
   const ranked = useMemo(
     () =>
-      [...cities]
+      [...forecasts]
         .map((item) => ({ ...item, activeForecast: item[mode] }))
         .sort((a, b) => b.activeForecast.score - a.activeForecast.score),
-    [mode],
+    [mode, forecasts],
   );
 
   return (
@@ -391,11 +341,11 @@ export default function Home() {
             <span className="brand-mark">G</span>
             <span>
               <span>霞光预报网</span>
-              <small>GlowCast V1.3 MVP</small>
+              <small>GlowCast · Live weather model</small>
             </span>
           </button>
           <nav className="city-nav" aria-label="城市选择">
-            {cities.map((item) => (
+            {cityConfigs.map((item) => (
               <button
                 key={item.name}
                 className={item.name === city.name ? "is-active" : ""}
@@ -412,7 +362,7 @@ export default function Home() {
 
         <div className="hero-grid">
           <section className="hero-copy" aria-labelledby="hero-title">
-            <p className="eyebrow">Live aurora of the city sky</p>
+            <p className="eyebrow">Open-Meteo live forecast</p>
             <h1 id="hero-title">
               {city.name}
               <span>{modeLabels[mode]}霞光指数</span>
@@ -434,6 +384,11 @@ export default function Home() {
                 </button>
               ))}
             </div>
+            <div className="source-strip">
+              <span>{loading ? "正在更新真实数据" : forecast.source}</span>
+              <span>云量 / 低云 / 高云 / 湿度 / 能见度 / 降水概率</span>
+              {dataError ? <span>{dataError}</span> : null}
+            </div>
           </section>
 
           <section className="score-stage" aria-label={`${city.name}${modeLabels[mode]}霞光指数`}>
@@ -446,7 +401,7 @@ export default function Home() {
               </div>
               <div className="score-caption">
                 <b>{getLevel(forecast.score)}</b>
-                <span>指数，不是概率</span>
+                <span>真实气象数据 + 经验指数模型</span>
               </div>
             </div>
           </section>
@@ -468,7 +423,7 @@ export default function Home() {
             </div>
             <div className="update-strip">
               <span>更新 {forecast.updatedAt}</span>
-              <span>较上次 {forecast.trend}</span>
+              <span>{forecast.trend}</span>
             </div>
           </aside>
         </div>
@@ -502,7 +457,7 @@ export default function Home() {
         </div>
         <div className="timeline">
           {forecast.timeline.map((point) => (
-            <article key={point.time} className="timeline-point">
+            <article key={`${point.time}-${point.label}`} className="timeline-point">
               <div className="timeline-bar">
                 <span style={{ height: `${point.value}%`, background: forecast.color }} />
               </div>
@@ -517,7 +472,7 @@ export default function Home() {
       <section className="content-band city-board">
         <div className="section-heading">
           <p className="eyebrow">Six city board</p>
-          <h2>首版城市总览</h2>
+          <h2>首版城市实时总览</h2>
         </div>
         <div className="city-grid">
           {ranked.map((item, index) => (
@@ -541,7 +496,7 @@ export default function Home() {
       <section className="feedback-band" aria-labelledby="feedback-title">
         <div>
           <p className="eyebrow">Feedback L0-L3</p>
-          <h2 id="feedback-title">今晚你看到的天空，反过来训练明天的预报。</h2>
+          <h2 id="feedback-title">你看到的天空，反过来训练下一版模型。</h2>
         </div>
         <div className="feedback-actions">
           {["没看到", "有一点", "很好看", "炸裂"].map((item) => (
@@ -555,7 +510,7 @@ export default function Home() {
           ))}
         </div>
         <p className="feedback-state">
-          {feedback ? `已记录：${city.name} ${modeLabels[mode]}「${feedback}」` : "请选择一个观测结果"}
+          {feedback ? `已记录：${city.name} ${modeLabels[mode]}「${feedback}」` : "当前反馈仍保存在本机，下一版可接数据库"}
         </p>
       </section>
     </main>
