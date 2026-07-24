@@ -378,7 +378,16 @@ function aodFromAirQuality(pm25?: number, pm10?: number, aqi?: number) {
 
 async function fetchJsonFromProxy(url: string) {
   const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Proxy request failed: ${response.status}`);
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = (await response.json()) as { error?: string; detail?: string };
+      detail = payload.error || payload.detail || "";
+    } catch {
+      detail = await response.text().catch(() => "");
+    }
+    throw new Error(`Proxy request failed: ${response.status}${detail ? ` · ${detail.slice(0, 120)}` : ""}`);
+  }
   return response.json() as Promise<unknown>;
 }
 
@@ -416,10 +425,11 @@ async function fetchChinaWeather(city: City): Promise<ChinaWeatherData> {
       provider: "和风天气 QWeather",
       note: "天气预报优先使用和风天气，缺失的云层分层和日出日落字段由 Open-Meteo 补齐。",
     };
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "未知错误";
     return {
       provider: "Open-Meteo GFS fallback",
-      note: "和风天气暂不可用，本次天气预报已降级到 Open-Meteo。",
+      note: `和风天气暂不可用，本次天气预报已降级到 Open-Meteo。原因：${message}`,
     };
   }
 }
@@ -456,10 +466,11 @@ async function fetchMEEAir(city: City, baseTimes?: string[]): Promise<ChinaAirDa
       provider: hourlyAod ? "生态环境部空气质量 AOD" : "生态环境部空气质量 PM/AQI 推导 AOD",
       note: hourlyAod ? "空气质量优先使用生态环境部 AOD 字段。" : "生态环境部未返回 AOD 时，以 PM2.5/PM10/AQI 推导色彩潜力代理值。",
     };
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "未知错误";
     return {
       provider: "Open-Meteo AOD fallback",
-      note: "生态环境部空气质量暂不可用，本次 AOD 已降级到 Open-Meteo。",
+      note: `生态环境部空气质量暂不可用，本次 AOD 已降级到 Open-Meteo。原因：${message}`,
     };
   }
 }
@@ -484,10 +495,11 @@ async function fetchAeronetAod(city: City): Promise<ChinaAirData> {
       provider: `AERONET 实测 AOD · ${city.aeronetSite}`,
       note: "AOD 优先使用 AERONET Level 2.0 站点实测值；站点缺测时降级到生态环境部 PM/AQI 推导。",
     };
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "未知错误";
     return {
       provider: "AERONET 暂无有效实测",
-      note: "AERONET 站点暂无可用 Level 2.0 AOD，已尝试降级到生态环境部空气质量。",
+      note: `AERONET 站点暂无可用 Level 2.0 AOD，已尝试降级到生态环境部空气质量。原因：${message}`,
     };
   }
 }

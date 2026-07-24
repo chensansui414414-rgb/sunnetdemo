@@ -1,4 +1,3 @@
-const QWEATHER_DEFAULT_HOST = "https://devapi.qweather.com";
 const CACHE_TTL_MS = 20 * 60 * 1000;
 
 type CacheValue = {
@@ -96,14 +95,15 @@ function normalizeQWeather(payload: QWeatherHourlyResponse): QWeatherProxyPayloa
 async function fetchQWeather(cityCode: string, lat?: string | null, lon?: string | null) {
   const key = process.env.QWEATHER_API_KEY;
   if (!key) throw new Error("QWEATHER_API_KEY is not configured");
-  const host = process.env.QWEATHER_API_HOST || QWEATHER_DEFAULT_HOST;
+  const host = process.env.QWEATHER_API_HOST;
+  if (!host) throw new Error("QWEATHER_API_HOST is not configured");
   const url = new URL("/v7/weather/24h", host);
   url.searchParams.set("location", lon && lat ? `${lon},${lat}` : cityCode);
-  url.searchParams.set("key", key);
 
   const response = await fetch(url.toString(), {
     headers: {
       Accept: "application/json",
+      "X-QW-Api-Key": key,
       "User-Agent": "GlowCast/1.0",
     },
     next: { revalidate: 1200 },
