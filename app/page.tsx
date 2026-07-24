@@ -102,6 +102,7 @@ type City = {
   smartWeatherCode: string;
   airCityName: string;
   airCityCode: string;
+  aeronetSite: string;
 };
 
 type CityForecast = City & {
@@ -154,12 +155,12 @@ type DataSourceMeta = {
 };
 
 const cityConfigs: City[] = [
-  { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969, smartWeatherCode: "101190101", airCityName: "南京市", airCityCode: "320100" },
-  { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737, smartWeatherCode: "101020100", airCityName: "上海市", airCityCode: "310000" },
-  { name: "北京", en: "BEIJING", latlon: "39.90N / 116.40E", latitude: 39.9042, longitude: 116.4074, smartWeatherCode: "101010100", airCityName: "北京市", airCityCode: "110000" },
-  { name: "广州", en: "GUANGZHOU", latlon: "23.13N / 113.26E", latitude: 23.1291, longitude: 113.2644, smartWeatherCode: "101280101", airCityName: "广州市", airCityCode: "440100" },
-  { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943, smartWeatherCode: "101190501", airCityName: "南通市", airCityCode: "320600" },
-  { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668, smartWeatherCode: "101270101", airCityName: "成都市", airCityCode: "510100" },
+  { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969, smartWeatherCode: "101190101", airCityName: "南京市", airCityCode: "320100", aeronetSite: "Nanjing" },
+  { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737, smartWeatherCode: "101020100", airCityName: "上海市", airCityCode: "310000", aeronetSite: "Shanghai" },
+  { name: "北京", en: "BEIJING", latlon: "39.90N / 116.40E", latitude: 39.9042, longitude: 116.4074, smartWeatherCode: "101010100", airCityName: "北京市", airCityCode: "110000", aeronetSite: "Beijing" },
+  { name: "广州", en: "GUANGZHOU", latlon: "23.13N / 113.26E", latitude: 23.1291, longitude: 113.2644, smartWeatherCode: "101280101", airCityName: "广州市", airCityCode: "440100", aeronetSite: "Guangzhou" },
+  { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943, smartWeatherCode: "101190501", airCityName: "南通市", airCityCode: "320600", aeronetSite: "Nanjing" },
+  { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668, smartWeatherCode: "101270101", airCityName: "成都市", airCityCode: "510100", aeronetSite: "Chengdu" },
 ];
 
 const modeLabels: Record<Mode, string> = {
@@ -459,6 +460,34 @@ async function fetchMEEAir(city: City, baseTimes?: string[]): Promise<ChinaAirDa
     return {
       provider: "Open-Meteo AOD fallback",
       note: "生态环境部空气质量暂不可用，本次 AOD 已降级到 Open-Meteo。",
+    };
+  }
+}
+
+async function fetchAeronetAod(city: City): Promise<ChinaAirData> {
+  try {
+    const url = proxyUrl("/api/aeronet", {
+      site: city.aeronetSite,
+    });
+    const payload = await fetchJsonFromProxy(url);
+    const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+    const times = asStringArray(recordValue(record, ["time", "times"]));
+    const aod = asNumberArray(recordValue(record, ["aerosol_optical_depth", "aod"]));
+    if (!times || !aod) throw new Error("AERONET proxy returned unsupported schema");
+    return {
+      air: {
+        hourly: {
+          time: times,
+          aerosol_optical_depth: aod,
+        },
+      },
+      provider: `AERONET 实测 AOD · ${city.aeronetSite}`,
+      note: "AOD 优先使用 AERONET Level 2.0 站点实测值；站点缺测时降级到生态环境部 PM/AQI 推导。",
+    };
+  } catch {
+    return {
+      provider: "AERONET 暂无有效实测",
+      note: "AERONET 站点暂无可用 Level 2.0 AOD，已尝试降级到生态环境部空气质量。",
     };
   }
 }
@@ -841,11 +870,12 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
     forecast_days: "2",
     hourly: "aerosol_optical_depth",
   });
-  const [gfsResponse, ecmwfResponse, airResponse, chinaWeatherResponse, meeAirResponse] = await Promise.allSettled([
+  const [gfsResponse, ecmwfResponse, airResponse, chinaWeatherResponse, aeronetResponse, meeAirResponse] = await Promise.allSettled([
     fetch(`https://api.open-meteo.com/v1/gfs?${gfsParams.toString()}`),
     fetch(`https://api.open-meteo.com/v1/ecmwf?${ecmwfParams.toString()}`),
     fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?${airParams.toString()}`),
     fetchChinaWeather(city),
+    fetchAeronetAod(city),
     fetchMEEAir(city),
   ]);
   if (gfsResponse.status !== "fulfilled" || !gfsResponse.value.ok) {
@@ -874,12 +904,19 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
           provider: "Open-Meteo AOD fallback",
           note: "生态环境部空气质量暂不可用，本次 AOD 已降级到 Open-Meteo。",
         };
+  const aeronetAir =
+    aeronetResponse.status === "fulfilled"
+      ? aeronetResponse.value
+      : {
+          provider: "AERONET 暂无有效实测",
+          note: "AERONET 站点暂无可用 Level 2.0 AOD，已尝试降级到生态环境部空气质量。",
+        };
   const primaryWeather = mergeForecastSource(gfs, chinaWeather.forecast);
-  const primaryAir = mergeAirSource(air, meeAir.air);
+  const primaryAir = mergeAirSource(mergeAirSource(air, meeAir.air), aeronetAir.air);
   const sourceMeta = {
     weatherProvider: chinaWeather.provider,
-    airProvider: meeAir.provider,
-    note: `${chinaWeather.note} ${meeAir.note}`,
+    airProvider: aeronetAir.air ? aeronetAir.provider : meeAir.provider,
+    note: `${chinaWeather.note} ${aeronetAir.note} ${aeronetAir.air ? "" : meeAir.note}`,
   };
   return {
     ...city,
