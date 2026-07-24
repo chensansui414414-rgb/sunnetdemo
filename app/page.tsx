@@ -101,6 +101,7 @@ type City = {
   longitude: number;
   smartWeatherCode: string;
   airCityName: string;
+  airCityCode: string;
 };
 
 type CityForecast = City & {
@@ -153,12 +154,12 @@ type DataSourceMeta = {
 };
 
 const cityConfigs: City[] = [
-  { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969, smartWeatherCode: "101190101", airCityName: "南京市" },
-  { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737, smartWeatherCode: "101020100", airCityName: "上海市" },
-  { name: "北京", en: "BEIJING", latlon: "39.90N / 116.40E", latitude: 39.9042, longitude: 116.4074, smartWeatherCode: "101010100", airCityName: "北京市" },
-  { name: "广州", en: "GUANGZHOU", latlon: "23.13N / 113.26E", latitude: 23.1291, longitude: 113.2644, smartWeatherCode: "101280101", airCityName: "广州市" },
-  { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943, smartWeatherCode: "101190501", airCityName: "南通市" },
-  { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668, smartWeatherCode: "101270101", airCityName: "成都市" },
+  { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969, smartWeatherCode: "101190101", airCityName: "南京市", airCityCode: "320100" },
+  { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737, smartWeatherCode: "101020100", airCityName: "上海市", airCityCode: "310000" },
+  { name: "北京", en: "BEIJING", latlon: "39.90N / 116.40E", latitude: 39.9042, longitude: 116.4074, smartWeatherCode: "101010100", airCityName: "北京市", airCityCode: "110000" },
+  { name: "广州", en: "GUANGZHOU", latlon: "23.13N / 113.26E", latitude: 23.1291, longitude: 113.2644, smartWeatherCode: "101280101", airCityName: "广州市", airCityCode: "440100" },
+  { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943, smartWeatherCode: "101190501", airCityName: "南通市", airCityCode: "320600" },
+  { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668, smartWeatherCode: "101270101", airCityName: "成都市", airCityCode: "510100" },
 ];
 
 const modeLabels: Record<Mode, string> = {
@@ -364,6 +365,12 @@ async function fetchJsonFromProxy(url: string) {
   return response.json() as Promise<unknown>;
 }
 
+function proxyUrl(base: string, params: Record<string, string>) {
+  const url = base.startsWith("http") ? new URL(base) : new URL(base, window.location.origin);
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+  return url.toString();
+}
+
 async function fetchChinaWeather(city: City): Promise<ChinaWeatherData> {
   const proxy = process.env.NEXT_PUBLIC_CHINA_WEATHER_PROXY_URL;
   if (!proxy) {
@@ -400,7 +407,7 @@ async function fetchChinaWeather(city: City): Promise<ChinaWeatherData> {
 }
 
 async function fetchMEEAir(city: City, baseTimes?: string[]): Promise<ChinaAirData> {
-  const proxy = process.env.NEXT_PUBLIC_MEE_AIR_PROXY_URL;
+  const proxy = process.env.NEXT_PUBLIC_MEE_AIR_PROXY_URL || "/api/mee-air";
   if (!proxy) {
     return {
       provider: "Open-Meteo AOD fallback",
@@ -408,10 +415,11 @@ async function fetchMEEAir(city: City, baseTimes?: string[]): Promise<ChinaAirDa
     };
   }
   try {
-    const url = new URL(proxy);
-    url.searchParams.set("city", city.airCityName);
-    url.searchParams.set("cityCode", city.smartWeatherCode);
-    const payload = await fetchJsonFromProxy(url.toString());
+    const url = proxyUrl(proxy, {
+      city: city.airCityName,
+      cityCode: city.airCityCode,
+    });
+    const payload = await fetchJsonFromProxy(url);
     const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
     const hourlyAod = asNumberArray(recordValue(record, ["aerosol_optical_depth", "aod"]));
     const pm25 = asNumber(recordValue(record, ["pm25", "pm2_5", "PM2.5", "pm2p5"]));
