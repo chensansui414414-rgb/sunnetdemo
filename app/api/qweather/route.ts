@@ -98,7 +98,7 @@ async function fetchQWeather(cityCode: string, lat?: string | null, lon?: string
   if (!key) throw new Error("QWEATHER_API_KEY is not configured");
   const host = process.env.QWEATHER_API_HOST || QWEATHER_DEFAULT_HOST;
   const url = new URL("/v7/weather/24h", host);
-  url.searchParams.set("location", cityCode || `${lon},${lat}`);
+  url.searchParams.set("location", lon && lat ? `${lon},${lat}` : cityCode);
   url.searchParams.set("key", key);
 
   const response = await fetch(url.toString(), {
@@ -110,6 +110,9 @@ async function fetchQWeather(cityCode: string, lat?: string | null, lon?: string
   });
   if (!response.ok) throw new Error(`QWeather request failed: ${response.status}`);
   const payload = (await response.json()) as QWeatherHourlyResponse;
+  if (payload.code && payload.code !== "200") {
+    throw new Error(`QWeather response code: ${payload.code}`);
+  }
   return normalizeQWeather(payload);
 }
 
