@@ -317,6 +317,20 @@ function normalizeHourlyPayload(payload: unknown): OpenMeteoResponse["hourly"] |
   return normalized.time || normalized.cloud_cover ? normalized : undefined;
 }
 
+function definedHourly(hourly?: OpenMeteoResponse["hourly"]): OpenMeteoResponse["hourly"] {
+  if (!hourly) return undefined;
+  return Object.fromEntries(
+    Object.entries(hourly).filter(([, value]) => Array.isArray(value) && value.length > 0),
+  ) as OpenMeteoResponse["hourly"];
+}
+
+function definedDaily(daily?: OpenMeteoResponse["daily"]): OpenMeteoResponse["daily"] {
+  if (!daily) return undefined;
+  return Object.fromEntries(
+    Object.entries(daily).filter(([, value]) => Array.isArray(value) && value.length > 0),
+  ) as OpenMeteoResponse["daily"];
+}
+
 function normalizeDailyPayload(payload: unknown): OpenMeteoResponse["daily"] | undefined {
   if (!payload || typeof payload !== "object") return undefined;
   const record = payload as Record<string, unknown>;
@@ -330,15 +344,17 @@ function normalizeDailyPayload(payload: unknown): OpenMeteoResponse["daily"] | u
 
 function mergeForecastSource(base: OpenMeteoResponse, priority?: OpenMeteoResponse): OpenMeteoResponse {
   if (!priority) return base;
+  const priorityHourly = definedHourly(priority.hourly);
+  const priorityDaily = definedDaily(priority.daily);
   return {
     ...base,
     hourly: {
       ...(base.hourly ?? {}),
-      ...(priority.hourly ?? {}),
+      ...(priorityHourly ?? {}),
     },
     daily: {
       ...(base.daily ?? {}),
-      ...(priority.daily ?? {}),
+      ...(priorityDaily ?? {}),
     },
   };
 }
@@ -372,20 +388,21 @@ function proxyUrl(base: string, params: Record<string, string>) {
 }
 
 async function fetchChinaWeather(city: City): Promise<ChinaWeatherData> {
-  const proxy = process.env.NEXT_PUBLIC_CHINA_WEATHER_PROXY_URL;
+  const proxy = process.env.NEXT_PUBLIC_CHINA_WEATHER_PROXY_URL || "/api/qweather";
   if (!proxy) {
     return {
       provider: "Open-Meteo GFS fallback",
-      note: "未配置中国天气网 SmartWeatherAPI 代理，天气预报使用 Open-Meteo GFS/ECMWF。",
+      note: "未配置中国优先天气源代理，天气预报使用 Open-Meteo GFS/ECMWF。",
     };
   }
   try {
-    const url = new URL(proxy);
-    url.searchParams.set("city", city.name);
-    url.searchParams.set("cityCode", city.smartWeatherCode);
-    url.searchParams.set("lat", String(city.latitude));
-    url.searchParams.set("lon", String(city.longitude));
-    const payload = await fetchJsonFromProxy(url.toString());
+    const url = proxyUrl(proxy, {
+      city: city.name,
+      cityCode: city.smartWeatherCode,
+      lat: String(city.latitude),
+      lon: String(city.longitude),
+    });
+    const payload = await fetchJsonFromProxy(url);
     const forecast = {
       hourly: normalizeHourlyPayload(payload),
       daily: normalizeDailyPayload(payload),
@@ -395,13 +412,13 @@ async function fetchChinaWeather(city: City): Promise<ChinaWeatherData> {
     }
     return {
       forecast,
-      provider: "中国天气网 SmartWeatherAPI",
-      note: "天气预报优先使用中国天气网 SmartWeatherAPI，缺失字段由 Open-Meteo 补齐。",
+      provider: "和风天气 QWeather",
+      note: "天气预报优先使用和风天气，缺失的云层分层和日出日落字段由 Open-Meteo 补齐。",
     };
   } catch {
     return {
       provider: "Open-Meteo GFS fallback",
-      note: "中国天气网 SmartWeatherAPI 暂不可用，本次天气预报已降级到 Open-Meteo。",
+      note: "和风天气暂不可用，本次天气预报已降级到 Open-Meteo。",
     };
   }
 }
