@@ -72,6 +72,9 @@ type Forecast = {
     cloud_variability_score: number;
     post_rain_signal: number;
     model_disagreement_signal: number;
+    weatherProvider: string;
+    airProvider: string;
+    dataSourceNote: string;
   };
 };
 
@@ -96,6 +99,8 @@ type City = {
   latlon: string;
   latitude: number;
   longitude: number;
+  smartWeatherCode: string;
+  airCityName: string;
 };
 
 type CityForecast = City & {
@@ -129,13 +134,31 @@ type AirQualityResponse = {
   };
 };
 
+type ChinaWeatherData = {
+  forecast?: OpenMeteoResponse;
+  provider: string;
+  note: string;
+};
+
+type ChinaAirData = {
+  air?: AirQualityResponse;
+  provider: string;
+  note: string;
+};
+
+type DataSourceMeta = {
+  weatherProvider: string;
+  airProvider: string;
+  note: string;
+};
+
 const cityConfigs: City[] = [
-  { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969 },
-  { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737 },
-  { name: "北京", en: "BEIJING", latlon: "39.90N / 116.40E", latitude: 39.9042, longitude: 116.4074 },
-  { name: "广州", en: "GUANGZHOU", latlon: "23.13N / 113.26E", latitude: 23.1291, longitude: 113.2644 },
-  { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943 },
-  { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668 },
+  { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969, smartWeatherCode: "101190101", airCityName: "南京市" },
+  { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737, smartWeatherCode: "101020100", airCityName: "上海市" },
+  { name: "北京", en: "BEIJING", latlon: "39.90N / 116.40E", latitude: 39.9042, longitude: 116.4074, smartWeatherCode: "101010100", airCityName: "北京市" },
+  { name: "广州", en: "GUANGZHOU", latlon: "23.13N / 113.26E", latitude: 23.1291, longitude: 113.2644, smartWeatherCode: "101280101", airCityName: "广州市" },
+  { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943, smartWeatherCode: "101190501", airCityName: "南通市" },
+  { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668, smartWeatherCode: "101270101", airCityName: "成都市" },
 ];
 
 const modeLabels: Record<Mode, string> = {
@@ -156,7 +179,7 @@ const fallbackForecast: Forecast = {
   horizon_gap_label: "等待数据",
   confidence_label: "等待真实数据",
   tags: ["数据读取中"],
-  advice: "正在读取 GFS、ECMWF 与 AOD 数据。",
+  advice: "正在读取中国官方优先数据源；若未配置授权代理，将自动降级到 Open-Meteo。",
   algorithm_version: algorithmVersion,
   city_calibration_version: calibrationMap.version,
   verdict: "正在读取真实气象数据。",
@@ -166,7 +189,7 @@ const fallbackForecast: Forecast = {
   updatedAt: "--:--",
   trend: "Live",
   color: "#b9e7ff",
-  source: "Open-Meteo 实时预报",
+  source: "中国官方源优先 · Open-Meteo fallback",
   raw: {
     dataTime: "--:--",
     cloud: 0,
@@ -190,6 +213,9 @@ const fallbackForecast: Forecast = {
     cloud_variability_score: 0,
     post_rain_signal: 0,
     model_disagreement_signal: 0,
+    weatherProvider: "等待数据",
+    airProvider: "等待数据",
+    dataSourceNote: "正在连接数据源",
   },
   factors: [
     { label: "光路通透度", value: 0, note: "等待太阳方向低云、能见度、降水与 AOD 数据" },
@@ -243,6 +269,173 @@ function nearestIndex(times: string[] = [], target: Date) {
 function at(values: number[] | undefined, index: number, fallback = 0) {
   const value = values?.[index];
   return Number.isFinite(value) ? Number(value) : fallback;
+}
+
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function asNumberArray(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const values = value.map(asNumber).filter((item): item is number => item !== undefined);
+  return values.length ? values : undefined;
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const values = value.filter((item): item is string => typeof item === "string");
+  return values.length ? values : undefined;
+}
+
+function recordValue(payload: unknown, keys: string[]) {
+  if (!payload || typeof payload !== "object") return undefined;
+  const record = payload as Record<string, unknown>;
+  return keys.map((key) => record[key]).find((value) => value !== undefined);
+}
+
+function normalizeHourlyPayload(payload: unknown): OpenMeteoResponse["hourly"] | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const record = payload as Record<string, unknown>;
+  const hourly = (record.hourly && typeof record.hourly === "object" ? record.hourly : record) as Record<string, unknown>;
+  const normalized: OpenMeteoResponse["hourly"] = {
+    time: asStringArray(recordValue(hourly, ["time", "times", "forecast_time", "forecastTimes"])),
+    cloud_cover: asNumberArray(recordValue(hourly, ["cloud_cover", "cloud", "totalCloud", "total_cloud"])),
+    cloud_cover_low: asNumberArray(recordValue(hourly, ["cloud_cover_low", "lowCloud", "low_cloud", "lcloud"])),
+    cloud_cover_mid: asNumberArray(recordValue(hourly, ["cloud_cover_mid", "midCloud", "mid_cloud", "mcloud"])),
+    cloud_cover_high: asNumberArray(recordValue(hourly, ["cloud_cover_high", "highCloud", "high_cloud", "hcloud"])),
+    relative_humidity_2m: asNumberArray(recordValue(hourly, ["relative_humidity_2m", "humidity", "rh", "relativeHumidity"])),
+    visibility: asNumberArray(recordValue(hourly, ["visibility", "vis"])),
+    precipitation_probability: asNumberArray(recordValue(hourly, ["precipitation_probability", "pop", "rainProbability", "precipProbability"])),
+    weather_code: asNumberArray(recordValue(hourly, ["weather_code", "weatherCode"])),
+  };
+  return normalized.time || normalized.cloud_cover ? normalized : undefined;
+}
+
+function normalizeDailyPayload(payload: unknown): OpenMeteoResponse["daily"] | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const record = payload as Record<string, unknown>;
+  const daily = (record.daily && typeof record.daily === "object" ? record.daily : record) as Record<string, unknown>;
+  const normalized = {
+    sunrise: asStringArray(recordValue(daily, ["sunrise", "sunrises"])),
+    sunset: asStringArray(recordValue(daily, ["sunset", "sunsets"])),
+  };
+  return normalized.sunrise || normalized.sunset ? normalized : undefined;
+}
+
+function mergeForecastSource(base: OpenMeteoResponse, priority?: OpenMeteoResponse): OpenMeteoResponse {
+  if (!priority) return base;
+  return {
+    ...base,
+    hourly: {
+      ...(base.hourly ?? {}),
+      ...(priority.hourly ?? {}),
+    },
+    daily: {
+      ...(base.daily ?? {}),
+      ...(priority.daily ?? {}),
+    },
+  };
+}
+
+function mergeAirSource(base?: AirQualityResponse, priority?: AirQualityResponse): AirQualityResponse | undefined {
+  if (!priority) return base;
+  return {
+    hourly: {
+      ...(base?.hourly ?? {}),
+      ...(priority.hourly ?? {}),
+    },
+  };
+}
+
+function aodFromAirQuality(pm25?: number, pm10?: number, aqi?: number) {
+  const pmSignal = (pm25 ?? 0) / 500 + (pm10 ?? 0) / 900;
+  const aqiSignal = (aqi ?? 0) / 1200;
+  return Math.max(0.03, Math.min(0.75, 0.04 + pmSignal + aqiSignal));
+}
+
+async function fetchJsonFromProxy(url: string) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Proxy request failed: ${response.status}`);
+  return response.json() as Promise<unknown>;
+}
+
+async function fetchChinaWeather(city: City): Promise<ChinaWeatherData> {
+  const proxy = process.env.NEXT_PUBLIC_CHINA_WEATHER_PROXY_URL;
+  if (!proxy) {
+    return {
+      provider: "Open-Meteo GFS fallback",
+      note: "未配置中国天气网 SmartWeatherAPI 代理，天气预报使用 Open-Meteo GFS/ECMWF。",
+    };
+  }
+  try {
+    const url = new URL(proxy);
+    url.searchParams.set("city", city.name);
+    url.searchParams.set("cityCode", city.smartWeatherCode);
+    url.searchParams.set("lat", String(city.latitude));
+    url.searchParams.set("lon", String(city.longitude));
+    const payload = await fetchJsonFromProxy(url.toString());
+    const forecast = {
+      hourly: normalizeHourlyPayload(payload),
+      daily: normalizeDailyPayload(payload),
+    };
+    if (!forecast.hourly && !forecast.daily) {
+      throw new Error("SmartWeather proxy returned unsupported schema");
+    }
+    return {
+      forecast,
+      provider: "中国天气网 SmartWeatherAPI",
+      note: "天气预报优先使用中国天气网 SmartWeatherAPI，缺失字段由 Open-Meteo 补齐。",
+    };
+  } catch {
+    return {
+      provider: "Open-Meteo GFS fallback",
+      note: "中国天气网 SmartWeatherAPI 暂不可用，本次天气预报已降级到 Open-Meteo。",
+    };
+  }
+}
+
+async function fetchMEEAir(city: City, baseTimes?: string[]): Promise<ChinaAirData> {
+  const proxy = process.env.NEXT_PUBLIC_MEE_AIR_PROXY_URL;
+  if (!proxy) {
+    return {
+      provider: "Open-Meteo AOD fallback",
+      note: "未配置生态环境部空气质量代理，AOD 使用 Open-Meteo 空气质量预报。",
+    };
+  }
+  try {
+    const url = new URL(proxy);
+    url.searchParams.set("city", city.airCityName);
+    url.searchParams.set("cityCode", city.smartWeatherCode);
+    const payload = await fetchJsonFromProxy(url.toString());
+    const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+    const hourlyAod = asNumberArray(recordValue(record, ["aerosol_optical_depth", "aod"]));
+    const pm25 = asNumber(recordValue(record, ["pm25", "pm2_5", "PM2.5", "pm2p5"]));
+    const pm10 = asNumber(recordValue(record, ["pm10", "PM10"]));
+    const aqi = asNumber(recordValue(record, ["aqi", "AQI"]));
+    const times = asStringArray(recordValue(record, ["time", "times"])) ?? baseTimes;
+    const derivedAod = hourlyAod ?? (times ? times.map(() => aodFromAirQuality(pm25, pm10, aqi)) : undefined);
+    if (!times || !derivedAod) throw new Error("MEE proxy returned unsupported schema");
+    return {
+      air: {
+        hourly: {
+          time: times,
+          aerosol_optical_depth: derivedAod,
+        },
+      },
+      provider: hourlyAod ? "生态环境部空气质量 AOD" : "生态环境部空气质量 PM/AQI 推导 AOD",
+      note: hourlyAod ? "空气质量优先使用生态环境部 AOD 字段。" : "生态环境部未返回 AOD 时，以 PM2.5/PM10/AQI 推导色彩潜力代理值。",
+    };
+  } catch {
+    return {
+      provider: "Open-Meteo AOD fallback",
+      note: "生态环境部空气质量暂不可用，本次 AOD 已降级到 Open-Meteo。",
+    };
+  }
 }
 
 function clamp01(value: number) {
@@ -480,7 +673,18 @@ function makeAdvice(stableScore: number, burstScore: number, core: ReturnType<ty
   return "稳定条件和爆发潜力都处在中间区间，适合顺路观察，重点看地平线是否开缝。";
 }
 
-function makeForecast(gfs: OpenMeteoResponse, mode: Mode, city: City, aodData?: AirQualityResponse, ecmwf?: OpenMeteoResponse): Forecast {
+function makeForecast(
+  gfs: OpenMeteoResponse,
+  mode: Mode,
+  city: City,
+  aodData?: AirQualityResponse,
+  ecmwf?: OpenMeteoResponse,
+  sourceMeta: DataSourceMeta = {
+    weatherProvider: "Open-Meteo GFS fallback",
+    airProvider: "Open-Meteo AOD fallback",
+    note: "未配置中国官方代理，本次使用 Open-Meteo 兜底数据。",
+  },
+): Forecast {
   const calibration = getCalibration(city.name);
   const hourly = gfs.hourly ?? {};
   const times = hourly.time ?? [];
@@ -544,6 +748,9 @@ function makeForecast(gfs: OpenMeteoResponse, mode: Mode, city: City, aodData?: 
     cloud_variability_score: core.cloudVariabilityScore,
     post_rain_signal: core.postRainSignal,
     model_disagreement_signal: core.modelDisagreementSignal,
+    weatherProvider: sourceMeta.weatherProvider,
+    airProvider: sourceMeta.airProvider,
+    dataSourceNote: sourceMeta.note,
   };
   const profile = makeProfile(core, aod, solar.azimuth);
   const tags = makeTags(core, stableScore, burstScore, calibration);
@@ -563,13 +770,13 @@ function makeForecast(gfs: OpenMeteoResponse, mode: Mode, city: City, aodData?: 
     algorithm_version: algorithmVersion,
     city_calibration_version: calibrationMap.version,
     verdict: makeVerdict(score, mode, calibration),
-    summary: `${describeRaw(raw)} 高分必须同时满足太阳方向光路通透和本地中高云画布可用；爆发潜力用于捕捉雨后开缝、低云边缘透光和模型分歧下的变化机会。`,
+    summary: `${describeRaw(raw)} 数据源：${sourceMeta.weatherProvider} / ${sourceMeta.airProvider}。高分必须同时满足太阳方向光路通透和本地中高云画布可用；爆发潜力用于捕捉雨后开缝、低云边缘透光和模型分歧下的变化机会。`,
     peak: peakPoint?.time ?? formatTime(target.toISOString()),
     sunTime: formatTime(eventTime),
     updatedAt: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }),
     trend: "实时",
     color,
-    source: "GFS + ECMWF + AOD 实时预报",
+    source: `${sourceMeta.weatherProvider} · ${sourceMeta.airProvider}`,
     raw,
     factors: [
       { label: "光路通透度", value: raw.lightPath, note: "太阳方向低云、雨幕、能见度和过高 AOD 会共同压低光路" },
@@ -609,10 +816,12 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
     forecast_days: "2",
     hourly: "aerosol_optical_depth",
   });
-  const [gfsResponse, ecmwfResponse, airResponse] = await Promise.allSettled([
+  const [gfsResponse, ecmwfResponse, airResponse, chinaWeatherResponse, meeAirResponse] = await Promise.allSettled([
     fetch(`https://api.open-meteo.com/v1/gfs?${gfsParams.toString()}`),
     fetch(`https://api.open-meteo.com/v1/ecmwf?${ecmwfParams.toString()}`),
     fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?${airParams.toString()}`),
+    fetchChinaWeather(city),
+    fetchMEEAir(city),
   ]);
   if (gfsResponse.status !== "fulfilled" || !gfsResponse.value.ok) {
     throw new Error("GFS request failed");
@@ -626,10 +835,31 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
     airResponse.status === "fulfilled" && airResponse.value.ok
       ? ((await airResponse.value.json()) as AirQualityResponse)
       : undefined;
+  const chinaWeather =
+    chinaWeatherResponse.status === "fulfilled"
+      ? chinaWeatherResponse.value
+      : {
+          provider: "Open-Meteo GFS fallback",
+          note: "中国天气网 SmartWeatherAPI 暂不可用，本次天气预报已降级到 Open-Meteo。",
+        };
+  const meeAir =
+    meeAirResponse.status === "fulfilled"
+      ? meeAirResponse.value
+      : {
+          provider: "Open-Meteo AOD fallback",
+          note: "生态环境部空气质量暂不可用，本次 AOD 已降级到 Open-Meteo。",
+        };
+  const primaryWeather = mergeForecastSource(gfs, chinaWeather.forecast);
+  const primaryAir = mergeAirSource(air, meeAir.air);
+  const sourceMeta = {
+    weatherProvider: chinaWeather.provider,
+    airProvider: meeAir.provider,
+    note: `${chinaWeather.note} ${meeAir.note}`,
+  };
   return {
     ...city,
-    sunset: makeForecast(gfs, "sunset", city, air, ecmwf),
-    sunrise: makeForecast(gfs, "sunrise", city, air, ecmwf),
+    sunset: makeForecast(primaryWeather, "sunset", city, primaryAir, ecmwf, sourceMeta),
+    sunrise: makeForecast(primaryWeather, "sunrise", city, primaryAir, ecmwf, sourceMeta),
   };
 }
 
@@ -758,6 +988,7 @@ export default function Home() {
             </div>
             <div className="source-strip">
               <span>{loading ? "正在更新真实数据" : forecast.source}</span>
+              <span>{forecast.raw.dataSourceNote}</span>
               <span>光路通透度 × 云层画布质量 × AOD × 太阳供光 × 降水惩罚 × 模型一致性</span>
               {dataError ? <span>{dataError}</span> : null}
             </div>
@@ -817,6 +1048,8 @@ export default function Home() {
         <div className="raw-grid">
           {[
             ["预报小时", forecast.raw.dataTime],
+            ["天气源", forecast.raw.weatherProvider],
+            ["空气源", forecast.raw.airProvider],
             ["太阳方位", `${forecast.raw.solarAzimuth}°`],
             ["太阳高度", `${forecast.raw.solarAltitude}°`],
             ["总云量", `${forecast.raw.cloud}%`],
