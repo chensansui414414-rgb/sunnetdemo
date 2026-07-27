@@ -780,13 +780,6 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
-function scoreToLevel(score: number) {
-  if (score >= 72) return "大烧";
-  if (score >= 45) return "小烧";
-  if (score > 0) return "无烧";
-  return "读取中";
-}
-
 function getCalibration(cityName: string): Calibration {
   const cityValue = calibrationMap[cityName];
   const citySpecific = typeof cityValue === "object" && cityValue !== null ? cityValue : {};
@@ -884,29 +877,8 @@ function solarPosition(latitude: number, longitude: number, date: Date) {
   return { altitude, azimuth };
 }
 
-function describeCloud(total: number, low: number, high: number) {
-  if (low > 75) return "低云偏厚，地平线透光窗口被压缩";
-  if (total >= 35 && total <= 68 && high > 20) return "云量处在可染色区间，高云能承接暖色";
-  if (total < 25) return "天空偏空，颜色载体不足";
-  return "云量可用，但云层结构需要继续观察";
-}
-
 function describeRaw(raw: Forecast["raw"]) {
   return `模型读取 ${raw.dataTime} 附近数据：太阳方位 ${raw.solarAzimuth}°，高度 ${raw.solarAltitude}°；总云量 ${raw.cloud}%，低云 ${raw.lowCloud}%，中高云 ${raw.midCloud + raw.highCloud}%，AOD ${raw.aod}，能见度 ${raw.visibilityKm} km，降水概率 ${raw.precipitation}%。`;
-}
-
-function describeTunnel(low: number, visibility: number, precip: number) {
-  if (precip > 55) return "降水概率偏高，透光通道不稳定";
-  if (low < 35 && visibility > 12000) return "低云少且能见度好，地平线比较干净";
-  if (low > 65) return "低云遮挡明显，峰值窗口可能很短";
-  return "低空通道一般，适合找更开阔的机位";
-}
-
-function describeAtmosphere(humidity: number, visibility: number) {
-  if (humidity >= 50 && humidity <= 75 && visibility > 9000) return "湿度和通透度平衡，利于暖色散射";
-  if (humidity > 82) return "湿度偏高，色彩可能被雾化";
-  if (humidity < 35) return "空气偏干，颜色边界清晰但饱和度有限";
-  return "大气条件中等，颜色表现取决于云缝";
 }
 
 function makeVerdict(score: number, mode: Mode, calibration: Calibration) {
@@ -1339,10 +1311,6 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
   };
 }
 
-function getLevel(score: number) {
-  return scoreToLevel(score);
-}
-
 function makeLoadingCity(city: City): CityForecast {
   return {
     ...city,
@@ -1362,7 +1330,8 @@ export default function Home() {
   useEffect(() => {
     const storedCity = window.localStorage.getItem("glowcast-city");
     if (storedCity && cityConfigs.some((city) => city.name === storedCity)) {
-      setCityName(storedCity);
+      const timer = window.setTimeout(() => setCityName(storedCity), 0);
+      return () => window.clearTimeout(timer);
     }
   }, []);
 

@@ -10,6 +10,8 @@
   --coral: #ff6a3d;
   --mint: #c7ff6b;
   --ice: #b9e7ff;
+  --font-geist-sans: "MiSans", "MiSans VF", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-geist-mono: "SFMono-Regular", "Cascadia Mono", "Roboto Mono", monospace;
 }
 
 @theme inline {
@@ -39,7 +41,7 @@ body {
     var(--night);
   background-size: 48px 48px, 48px 48px, auto, auto, auto;
   color: var(--paper);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans);
 }
 
 button {
