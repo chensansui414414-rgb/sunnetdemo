@@ -4,7 +4,6 @@ const DATA_CODE = "SURF_CHN_MUL_HOR_3H";
 const INTERFACE_ID = "getSurfEleByTimeRangeAndStaID";
 const ELEMENTS = [
   "Station_Id_C",
-  "Station_Name",
   "Year",
   "Mon",
   "Day",

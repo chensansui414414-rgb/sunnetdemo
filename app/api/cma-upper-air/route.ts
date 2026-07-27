@@ -5,17 +5,13 @@ const INTERFACE_ID = "getUparEleByTimeAndStaIDAndPress";
 const DEFAULT_LAYERS = "1000,925,850,700,500,300,200";
 const ELEMENTS = [
   "Station_Id_C",
-  "Station_Name",
   "Year",
   "Mon",
   "Day",
   "Hour",
-  "PRS",
   "GPH",
-  "HGT",
   "TEM",
   "DPT",
-  "RHU",
   "WIN_D",
   "WIN_S",
 ].join(",");
@@ -79,26 +75,24 @@ function pad(value: number) {
 }
 
 function cmaTime(value: Date) {
-  const chinaTime = new Date(value.getTime() + 8 * 60 * 60 * 1000);
   return [
-    chinaTime.getUTCFullYear(),
-    pad(chinaTime.getUTCMonth() + 1),
-    pad(chinaTime.getUTCDate()),
-    pad(chinaTime.getUTCHours()),
-    pad(chinaTime.getUTCMinutes()),
-    pad(chinaTime.getUTCSeconds()),
+    value.getUTCFullYear(),
+    pad(value.getUTCMonth() + 1),
+    pad(value.getUTCDate()),
+    pad(value.getUTCHours()),
+    pad(value.getUTCMinutes()),
+    pad(value.getUTCSeconds()),
   ].join("");
 }
 
 function latestSynopticTime(now = new Date()) {
-  const chinaTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-  const y = chinaTime.getUTCFullYear();
-  const m = chinaTime.getUTCMonth();
-  const d = chinaTime.getUTCDate();
-  const h = chinaTime.getUTCHours();
-  const targetHour = h >= 20 ? 20 : h >= 8 ? 8 : -4;
-  const target = targetHour >= 0 ? new Date(Date.UTC(y, m, d, targetHour, 0, 0)) : new Date(Date.UTC(y, m, d - 1, 20, 0, 0));
-  return new Date(target.getTime() - 8 * 60 * 60 * 1000);
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  const d = now.getUTCDate();
+  const h = now.getUTCHours();
+  if (h >= 15) return new Date(Date.UTC(y, m, d, 12, 0, 0));
+  if (h >= 3) return new Date(Date.UTC(y, m, d, 0, 0, 0));
+  return new Date(Date.UTC(y, m, d - 1, 12, 0, 0));
 }
 
 function isMissing(value: number) {
@@ -139,23 +133,52 @@ function rowTime(row: CmaRow) {
 }
 
 function layerPressure(row: CmaRow) {
-  return numberFrom(row.PRS) ?? numberFrom(row.PRE) ?? numberFrom(row.Press) ?? numberFrom(row.pLayer);
+  return numberFrom(row.PRS) ??
+    numberFrom(row.PRE) ??
+    numberFrom(row.Press) ??
+    numberFrom(row.pLayer) ??
+    pressureFromHeight(layerHeight(row));
 }
 
 function layerHeight(row: CmaRow) {
   return numberFrom(row.GPH) ?? numberFrom(row.HGT) ?? numberFrom(row.Height);
 }
 
+function pressureFromHeight(height?: number) {
+  if (height === undefined) return undefined;
+  const standardLevels = [
+    { pressure: 1000, height: 110 },
+    { pressure: 925, height: 760 },
+    { pressure: 850, height: 1460 },
+    { pressure: 700, height: 3010 },
+    { pressure: 500, height: 5570 },
+    { pressure: 300, height: 9160 },
+    { pressure: 200, height: 11780 },
+  ];
+  return standardLevels.reduce((best, level) =>
+    Math.abs(level.height - height) < Math.abs(best.height - height) ? level : best,
+  ).pressure;
+}
+
 function layerFrom(row: CmaRow): UpperAirLayer {
+  const temperature = numberFrom(row.TEM);
+  const dewpoint = numberFrom(row.DPT);
   return {
     pressure: layerPressure(row),
     height: layerHeight(row),
-    temperature: numberFrom(row.TEM),
-    dewpoint: numberFrom(row.DPT),
-    humidity: numberFrom(row.RHU) ?? numberFrom(row.RH),
+    temperature,
+    dewpoint,
+    humidity: numberFrom(row.RHU) ?? numberFrom(row.RH) ?? relativeHumidityFromDewpoint(temperature, dewpoint),
     windDirection: numberFrom(row.WIN_D),
     windSpeed: numberFrom(row.WIN_S),
   };
+}
+
+function relativeHumidityFromDewpoint(temperature?: number, dewpoint?: number) {
+  if (temperature === undefined || dewpoint === undefined) return undefined;
+  const saturationAtDewpoint = Math.exp((17.625 * dewpoint) / (243.04 + dewpoint));
+  const saturationAtTemperature = Math.exp((17.625 * temperature) / (243.04 + temperature));
+  return Math.max(0, Math.min(100, (saturationAtDewpoint / saturationAtTemperature) * 100));
 }
 
 function average(values: Array<number | undefined>) {
@@ -170,7 +193,12 @@ function supportFromHumidity(value: number | undefined, threshold = 72) {
 }
 
 function normalizeRows(rows: CmaRow[], fallbackStationName?: string): UpperAirProfile {
-  const sortedRows = [...rows].sort((a, b) => (layerPressure(b) ?? 0) - (layerPressure(a) ?? 0));
+  const uniqueByPressure = new Map<number, CmaRow>();
+  rows.forEach((row) => {
+    const pressure = layerPressure(row);
+    if (pressure !== undefined && !uniqueByPressure.has(pressure)) uniqueByPressure.set(pressure, row);
+  });
+  const sortedRows = [...uniqueByPressure.values()].sort((a, b) => (layerPressure(b) ?? 0) - (layerPressure(a) ?? 0));
   const layers = sortedRows.map(layerFrom);
   const lowLayerHumidity = average(layers.filter((layer) => [1000, 925, 850].includes(Math.round(layer.pressure ?? 0))).map((layer) => layer.humidity));
   const midLayerHumidity = average(layers.filter((layer) => [700, 500].includes(Math.round(layer.pressure ?? 0))).map((layer) => layer.humidity));
