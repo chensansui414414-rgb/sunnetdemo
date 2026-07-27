@@ -32,6 +32,13 @@ type CmaRadarProxyPayload = {
   stationId: string;
   latest?: CmaRadarFile;
   files: CmaRadarFile[];
+  analysis: {
+    status: "metadata_only" | "no_file";
+    method: string;
+    rainWallScore?: number;
+    clearingScore?: number;
+    note: string;
+  };
   cma_raw?: {
     returnCode?: string;
     returnMessage?: string;
@@ -124,6 +131,13 @@ async function fetchCmaRadar(city: string | undefined, stationId: string) {
       stationId,
       latest: files[0],
       files,
+      analysis: {
+        status: files[0]?.fileName ? "metadata_only" : "no_file",
+        method: "CMA 返回 FILE_NAME 元数据；当前订单说明未提供 PNG 文件下载地址，暂不把文件名伪装成反射率强度。",
+        note: files[0]?.fileName
+          ? "已拿到最新雷达图文件名。要计算雨幕评分和退雨评分，还需要 CMA 雷达文件下载接口或可访问的 PNG URL。"
+          : "未拿到可解析雷达文件。",
+      },
       cma_raw: {
         returnCode: payload.returnCode,
         returnMessage: payload.returnMessage,

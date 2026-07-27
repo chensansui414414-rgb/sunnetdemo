@@ -23,6 +23,7 @@ type ProfileCell = {
   mid: number;
   high: number;
   aod: string;
+  station?: string;
 };
 
 type Forecast = {
@@ -90,6 +91,11 @@ type Forecast = {
     upperAirLowRh: string;
     upperAirMidRh: string;
     upperAirHighRh: string;
+    profileMode: string;
+    profileSampleCount: number;
+    radarAnalysis: string;
+    radarRainWallScore: string;
+    radarClearingScore: string;
     dataSourceNote: string;
   };
 };
@@ -197,6 +203,13 @@ type RadarData = {
     format?: string;
     fileName?: string;
   };
+  analysis?: {
+    status?: string;
+    method?: string;
+    rainWallScore?: number;
+    clearingScore?: number;
+    note?: string;
+  };
   provider: string;
   note: string;
 };
@@ -212,12 +225,24 @@ type UpperAirProfile = {
   midCloudSupport?: number;
   highCloudSupport?: number;
   profileSupport?: number;
+  latitude?: number;
+  longitude?: number;
+  distanceKm?: number;
+  bearingFromCity?: number;
 };
 
 type UpperAirData = {
   profile?: UpperAirProfile;
+  samples?: UpperAirProfile[];
   provider: string;
   note: string;
+};
+
+type UpperAirStation = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
 };
 
 type DataSourceMeta = {
@@ -240,6 +265,51 @@ const cityConfigs: City[] = [
   { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943, smartWeatherCode: "101190501", airCityName: "南通市", airCityCode: "320600", aeronetSite: "Nanjing", cmaStationId: "58259", cmaStationName: "南通", cmaUpperAirStationId: "58362", cmaUpperAirStationName: "宝山", cmaRadarStationId: "Z9513", cmaRadarStationName: "南通" },
   { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668, smartWeatherCode: "101270101", airCityName: "成都市", airCityCode: "510100", aeronetSite: "Chengdu", cmaStationId: "56187", cmaStationName: "温江", cmaUpperAirStationId: "56187", cmaUpperAirStationName: "温江", cmaRadarStationId: "Z9280", cmaRadarStationName: "成都" },
 ];
+
+const upperAirStationsByCity: Record<string, UpperAirStation[]> = {
+  南京: [
+    { id: "58238", name: "南京", latitude: 31.93, longitude: 118.9 },
+    { id: "58150", name: "射阳", latitude: 33.77, longitude: 120.25 },
+    { id: "58457", name: "杭州", latitude: 30.23, longitude: 120.17 },
+    { id: "58362", name: "宝山", latitude: 31.4, longitude: 121.45 },
+    { id: "58424", name: "安庆", latitude: 30.62, longitude: 116.97 },
+  ],
+  上海: [
+    { id: "58362", name: "宝山", latitude: 31.4, longitude: 121.45 },
+    { id: "58457", name: "杭州", latitude: 30.23, longitude: 120.17 },
+    { id: "58238", name: "南京", latitude: 31.93, longitude: 118.9 },
+    { id: "58150", name: "射阳", latitude: 33.77, longitude: 120.25 },
+    { id: "58665", name: "洪家", latitude: 28.62, longitude: 121.42 },
+  ],
+  北京: [
+    { id: "54511", name: "北京", latitude: 39.8, longitude: 116.47 },
+    { id: "54218", name: "赤峰", latitude: 42.3, longitude: 118.83 },
+    { id: "54727", name: "章丘", latitude: 36.68, longitude: 117.55 },
+    { id: "53772", name: "太原", latitude: 37.62, longitude: 112.58 },
+    { id: "53463", name: "呼和浩特", latitude: 40.85, longitude: 111.57 },
+  ],
+  广州: [
+    { id: "59280", name: "清远", latitude: 23.72, longitude: 113.08 },
+    { id: "45004", name: "九龙", latitude: 22.2, longitude: 114.1 },
+    { id: "59265", name: "梧州", latitude: 23.48, longitude: 111.3 },
+    { id: "57972", name: "郴州", latitude: 25.8, longitude: 113.03 },
+    { id: "59316", name: "汕头", latitude: 23.4, longitude: 116.68 },
+  ],
+  南通: [
+    { id: "58362", name: "宝山", latitude: 31.4, longitude: 121.45 },
+    { id: "58238", name: "南京", latitude: 31.93, longitude: 118.9 },
+    { id: "58457", name: "杭州", latitude: 30.23, longitude: 120.17 },
+    { id: "58150", name: "射阳", latitude: 33.77, longitude: 120.25 },
+    { id: "58665", name: "洪家", latitude: 28.62, longitude: 121.42 },
+  ],
+  成都: [
+    { id: "56187", name: "温江", latitude: 30.75, longitude: 103.87 },
+    { id: "57516", name: "沙坪坝", latitude: 29.58, longitude: 106.47 },
+    { id: "56571", name: "西昌", latitude: 27.9, longitude: 102.27 },
+    { id: "57127", name: "汉中", latitude: 33.07, longitude: 107.03 },
+    { id: "56146", name: "甘孜", latitude: 31.62, longitude: 100 },
+  ],
+};
 
 const modeLabels: Record<Mode, string> = {
   sunset: "今晚日落",
@@ -311,6 +381,11 @@ const fallbackForecast: Forecast = {
     upperAirLowRh: "--",
     upperAirMidRh: "--",
     upperAirHighRh: "--",
+    profileMode: "等待数据",
+    profileSampleCount: 0,
+    radarAnalysis: "等待数据",
+    radarRainWallScore: "--",
+    radarClearingScore: "--",
     dataSourceNote: "正在连接数据源",
   },
   factors: [
@@ -632,9 +707,11 @@ async function fetchCmaRadar(city: City): Promise<RadarData> {
     const payload = await fetchJsonFromProxy(url);
     const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
     const latest = record.latest && typeof record.latest === "object" ? (record.latest as RadarData["latest"]) : undefined;
+    const analysis = record.analysis && typeof record.analysis === "object" ? (record.analysis as RadarData["analysis"]) : undefined;
     if (!latest) throw new Error("CMA radar proxy returned no latest file");
     return {
       latest,
+      analysis,
       provider: "CMA 雷达组合反射率",
       note: `雷达参考使用 ${city.cmaRadarStationName}(${city.cmaRadarStationId}) 最近一张组合反射率 PNG。`,
     };
@@ -649,19 +726,46 @@ async function fetchCmaRadar(city: City): Promise<RadarData> {
 
 async function fetchCmaUpperAir(city: City): Promise<UpperAirData> {
   try {
-    const url = proxyUrl("/api/cma-upper-air", {
-      city: city.name,
-      stationId: city.cmaUpperAirStationId,
-      stationName: city.cmaUpperAirStationName,
-    });
-    const payload = await fetchJsonFromProxy(url);
-    const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
-    const profile = record.profile && typeof record.profile === "object" ? (record.profile as UpperAirProfile) : undefined;
-    if (!profile) throw new Error("CMA upper air proxy returned no profile");
+    const stations = upperAirStationsByCity[city.name] ?? [
+      {
+        id: city.cmaUpperAirStationId,
+        name: city.cmaUpperAirStationName,
+        latitude: city.latitude,
+        longitude: city.longitude,
+      },
+    ];
+    const responses = await Promise.allSettled(
+      stations.map(async (station) => {
+        const url = proxyUrl("/api/cma-upper-air", {
+          city: city.name,
+          stationId: station.id,
+          stationName: station.name,
+        });
+        const payload = await fetchJsonFromProxy(url);
+        const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+        const profile = record.profile && typeof record.profile === "object" ? (record.profile as UpperAirProfile) : undefined;
+        if (!profile) throw new Error(`CMA upper air proxy returned no profile for ${station.id}`);
+        return {
+          ...profile,
+          stationId: profile.stationId ?? station.id,
+          stationName: profile.stationName ?? station.name,
+          latitude: station.latitude,
+          longitude: station.longitude,
+          distanceKm: geoDistanceKm(city.latitude, city.longitude, station.latitude, station.longitude),
+          bearingFromCity: bearingBetween(city.latitude, city.longitude, station.latitude, station.longitude),
+        };
+      }),
+    );
+    const samples = responses
+      .filter((item): item is PromiseFulfilledResult<UpperAirProfile> => item.status === "fulfilled")
+      .map((item) => item.value);
+    const profile = samples.find((item) => item.stationId === city.cmaUpperAirStationId) ?? samples[0];
+    if (!profile) throw new Error("CMA upper air proxy returned no usable station profiles");
     return {
       profile,
+      samples,
       provider: "CMA 高空湿度剖面",
-      note: `低/中/高云分层优先用 ${profile.stationName ?? city.cmaUpperAirStationName}(${profile.stationId ?? city.cmaUpperAirStationId}) 高空相对湿度剖面校准。`,
+      note: `低/中/高云分层优先用 ${profile.stationName ?? city.cmaUpperAirStationName}(${profile.stationId ?? city.cmaUpperAirStationId}) 高空相对湿度剖面校准；剖面图按太阳方向从 ${samples.length} 个真实高空站采样。`,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知错误";
@@ -718,6 +822,29 @@ function degrees(value: number) {
 
 function radians(value: number) {
   return (value * Math.PI) / 180;
+}
+
+function geoDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const earthRadiusKm = 6371;
+  const dLat = radians(lat2 - lat1);
+  const dLon = radians(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(dLon / 2) ** 2;
+  return earthRadiusKm * 2 * Math.asin(Math.sqrt(a));
+}
+
+function bearingBetween(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const y = Math.sin(radians(lon2 - lon1)) * Math.cos(radians(lat2));
+  const x =
+    Math.cos(radians(lat1)) * Math.sin(radians(lat2)) -
+    Math.sin(radians(lat1)) * Math.cos(radians(lat2)) * Math.cos(radians(lon2 - lon1));
+  return (degrees(Math.atan2(y, x)) + 360) % 360;
+}
+
+function angularDistance(left: number, right: number) {
+  const diff = Math.abs(((left - right + 540) % 360) - 180);
+  return diff;
 }
 
 function solarPosition(latitude: number, longitude: number, date: Date) {
@@ -880,21 +1007,45 @@ function calculateCore(
   };
 }
 
-function makeProfile(core: ReturnType<typeof calculateCore>, aod: number, solarAzimuth: number): ProfileCell[] {
+function profileCloudValue(fallback: number, support?: number) {
+  return support === undefined ? fallback : fallback * 0.2 + support * 0.8;
+}
+
+function pickDirectionalSample(samples: UpperAirProfile[], solarAzimuth: number, distance: number) {
+  const candidates = samples
+    .map((sample) => {
+      const sampleDistance = sample.distanceKm ?? 0;
+      const sampleBearing = sample.bearingFromCity ?? solarAzimuth;
+      const angle = angularDistance(sampleBearing, solarAzimuth);
+      const projected = sampleDistance * Math.cos(radians(angle));
+      const crossTrack = Math.abs(sampleDistance * Math.sin(radians(angle)));
+      return {
+        sample,
+        penalty: Math.abs(projected - distance) + crossTrack * 1.45 + angle * 2.2,
+      };
+    })
+    .filter((item) => (item.sample.distanceKm ?? 0) < 60 || angularDistance(item.sample.bearingFromCity ?? solarAzimuth, solarAzimuth) <= 95);
+  return candidates.sort((a, b) => a.penalty - b.penalty)[0]?.sample;
+}
+
+function makeProfile(core: ReturnType<typeof calculateCore>, aod: number, solarAzimuth: number, upperAirData?: UpperAirData): ProfileCell[] {
+  const samples = upperAirData?.samples?.filter((sample) => sample.profileSupport !== undefined || sample.lowCloudSupport !== undefined) ?? [];
   const bearingWave = Math.sin(radians(solarAzimuth));
   return Array.from({ length: 11 }, (_, index) => {
     const distance = index * 100;
+    const sample = pickDirectionalSample(samples, solarAzimuth, distance);
     const decay = 1 - index * 0.045;
-    const terrainNoise = Math.sin(index * 1.37 + bearingWave) * 7;
-    const low = clamp(core.low * decay + terrainNoise - index * 1.8);
-    const mid = clamp(core.mid * (0.88 + Math.sin(index * 0.72) * 0.16));
-    const high = clamp(core.high * (1.04 - index * 0.025) + Math.cos(index * 0.61) * 8);
+    const terrainNoise = samples.length ? 0 : Math.sin(index * 1.37 + bearingWave) * 7;
+    const low = clamp(sample ? profileCloudValue(core.low, sample.lowCloudSupport) : core.low * decay + terrainNoise - index * 1.8);
+    const mid = clamp(sample ? profileCloudValue(core.mid, sample.midCloudSupport) : core.mid * (0.88 + Math.sin(index * 0.72) * 0.16));
+    const high = clamp(sample ? profileCloudValue(core.high, sample.highCloudSupport) : core.high * (1.04 - index * 0.025) + Math.cos(index * 0.61) * 8);
     return {
       distance,
       low,
       mid,
       high,
       aod: Math.max(0.01, aod + Math.sin(index * 0.55) * 0.025).toFixed(2),
+      station: sample?.stationName,
     };
   });
 }
@@ -1026,15 +1177,20 @@ function makeForecast(
     radarStation: radarData?.latest?.stationId ? `${city.cmaRadarStationName}(${radarData.latest.stationId})` : "--",
     radarTime: radarData?.latest?.datetime ?? "--",
     radarFile: radarData?.latest?.fileName ?? "--",
+    radarAnalysis: radarData?.analysis?.status ?? "待解析",
+    radarRainWallScore: radarData?.analysis?.rainWallScore !== undefined ? `${radarData.analysis.rainWallScore}` : "--",
+    radarClearingScore: radarData?.analysis?.clearingScore !== undefined ? `${radarData.analysis.clearingScore}` : "--",
     upperAirProvider: upperAirData?.provider ?? sourceMeta.upperAirProvider,
     upperAirStation: upperAirData?.profile?.stationName || upperAirData?.profile?.stationId || "--",
     upperAirTime: upperAirData?.profile?.time ? formatTime(upperAirData.profile.time) : "--",
     upperAirLowRh: upperAirData?.profile?.lowLayerHumidity !== undefined ? `${Math.round(upperAirData.profile.lowLayerHumidity)}%` : "--",
     upperAirMidRh: upperAirData?.profile?.midLayerHumidity !== undefined ? `${Math.round(upperAirData.profile.midLayerHumidity)}%` : "--",
     upperAirHighRh: upperAirData?.profile?.highLayerHumidity !== undefined ? `${Math.round(upperAirData.profile.highLayerHumidity)}%` : "--",
+    profileMode: upperAirData?.samples?.length ? "高空站真采样" : "解释型 fallback",
+    profileSampleCount: upperAirData?.samples?.length ?? 0,
     dataSourceNote: `${sourceMeta.note} ${groundData?.note ?? sourceMeta.groundNote} ${radarData?.note ?? sourceMeta.radarNote} ${upperAirData?.note ?? sourceMeta.upperAirNote}`,
   };
-  const profile = makeProfile(core, aod, solar.azimuth);
+  const profile = makeProfile(core, aod, solar.azimuth, upperAirData);
   const tags = makeTags(core, stableScore, burstScore, calibration);
   const advice = makeAdvice(stableScore, burstScore, core, mode);
 
@@ -1380,12 +1536,17 @@ export default function Home() {
             ["雷达站", forecast.raw.radarStation],
             ["雷达时间", forecast.raw.radarTime],
             ["雷达文件", forecast.raw.radarFile],
+            ["雷达解析", forecast.raw.radarAnalysis],
+            ["雨幕评分", forecast.raw.radarRainWallScore],
+            ["退雨评分", forecast.raw.radarClearingScore],
             ["高空源", forecast.raw.upperAirProvider],
             ["高空站", forecast.raw.upperAirStation],
             ["高空时间", forecast.raw.upperAirTime],
             ["低层RH", forecast.raw.upperAirLowRh],
             ["中层RH", forecast.raw.upperAirMidRh],
             ["高层RH", forecast.raw.upperAirHighRh],
+            ["剖面模式", forecast.raw.profileMode],
+            ["剖面样本", `${forecast.raw.profileSampleCount}`],
             ["太阳方位", `${forecast.raw.solarAzimuth}°`],
             ["太阳高度", `${forecast.raw.solarAltitude}°`],
             ["总云量", `${forecast.raw.cloud}%`],
@@ -1548,6 +1709,8 @@ export default function Home() {
 
           <div className="profile-footer">
             <span>观测 AOD：{forecast.raw.aod}</span>
+            <span>剖面模式：{forecast.raw.profileMode}</span>
+            <span>样本：{forecast.raw.profileSampleCount}站</span>
             <span>光路通透度：{forecast.raw.lightPath}%</span>
             <span>云层画布：{forecast.raw.cloudCanvas}%</span>
             <span>峰值窗口：{forecast.peak}</span>
