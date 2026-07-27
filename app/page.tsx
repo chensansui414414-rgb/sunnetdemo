@@ -74,6 +74,12 @@ type Forecast = {
     model_disagreement_signal: number;
     weatherProvider: string;
     airProvider: string;
+    groundProvider: string;
+    groundStation: string;
+    groundDataTime: string;
+    observedHumidity: string;
+    observedPressure: string;
+    observedPrecipitation: string;
     dataSourceNote: string;
   };
 };
@@ -103,6 +109,8 @@ type City = {
   airCityName: string;
   airCityCode: string;
   aeronetSite: string;
+  cmaStationId: string;
+  cmaStationName: string;
 };
 
 type CityForecast = City & {
@@ -148,19 +156,41 @@ type ChinaAirData = {
   note: string;
 };
 
+type GroundObservation = {
+  time?: string;
+  stationId?: string;
+  stationName?: string;
+  temperature?: number;
+  humidity?: number;
+  pressure?: number;
+  windDirection?: number;
+  windSpeed?: number;
+  precipitation1h?: number;
+  precipitation3h?: number;
+  visibility?: number;
+};
+
+type GroundObservationData = {
+  observation?: GroundObservation;
+  provider: string;
+  note: string;
+};
+
 type DataSourceMeta = {
   weatherProvider: string;
   airProvider: string;
+  groundProvider: string;
+  groundNote: string;
   note: string;
 };
 
 const cityConfigs: City[] = [
-  { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969, smartWeatherCode: "101190101", airCityName: "南京市", airCityCode: "320100", aeronetSite: "Nanjing" },
-  { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737, smartWeatherCode: "101020100", airCityName: "上海市", airCityCode: "310000", aeronetSite: "Shanghai" },
-  { name: "北京", en: "BEIJING", latlon: "39.90N / 116.40E", latitude: 39.9042, longitude: 116.4074, smartWeatherCode: "101010100", airCityName: "北京市", airCityCode: "110000", aeronetSite: "Beijing" },
-  { name: "广州", en: "GUANGZHOU", latlon: "23.13N / 113.26E", latitude: 23.1291, longitude: 113.2644, smartWeatherCode: "101280101", airCityName: "广州市", airCityCode: "440100", aeronetSite: "Guangzhou" },
-  { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943, smartWeatherCode: "101190501", airCityName: "南通市", airCityCode: "320600", aeronetSite: "Nanjing" },
-  { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668, smartWeatherCode: "101270101", airCityName: "成都市", airCityCode: "510100", aeronetSite: "Chengdu" },
+  { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969, smartWeatherCode: "101190101", airCityName: "南京市", airCityCode: "320100", aeronetSite: "Nanjing", cmaStationId: "58238", cmaStationName: "南京" },
+  { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737, smartWeatherCode: "101020100", airCityName: "上海市", airCityCode: "310000", aeronetSite: "Shanghai", cmaStationId: "58367", cmaStationName: "徐家汇" },
+  { name: "北京", en: "BEIJING", latlon: "39.90N / 116.40E", latitude: 39.9042, longitude: 116.4074, smartWeatherCode: "101010100", airCityName: "北京市", airCityCode: "110000", aeronetSite: "Beijing", cmaStationId: "54511", cmaStationName: "北京" },
+  { name: "广州", en: "GUANGZHOU", latlon: "23.13N / 113.26E", latitude: 23.1291, longitude: 113.2644, smartWeatherCode: "101280101", airCityName: "广州市", airCityCode: "440100", aeronetSite: "Guangzhou", cmaStationId: "59287", cmaStationName: "广州" },
+  { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943, smartWeatherCode: "101190501", airCityName: "南通市", airCityCode: "320600", aeronetSite: "Nanjing", cmaStationId: "58259", cmaStationName: "南通" },
+  { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668, smartWeatherCode: "101270101", airCityName: "成都市", airCityCode: "510100", aeronetSite: "Chengdu", cmaStationId: "56187", cmaStationName: "温江" },
 ];
 
 const modeLabels: Record<Mode, string> = {
@@ -217,6 +247,12 @@ const fallbackForecast: Forecast = {
     model_disagreement_signal: 0,
     weatherProvider: "等待数据",
     airProvider: "等待数据",
+    groundProvider: "等待数据",
+    groundStation: "--",
+    groundDataTime: "--",
+    observedHumidity: "--",
+    observedPressure: "--",
+    observedPrecipitation: "--",
     dataSourceNote: "正在连接数据源",
   },
   factors: [
@@ -504,6 +540,31 @@ async function fetchAeronetAod(city: City): Promise<ChinaAirData> {
   }
 }
 
+async function fetchCmaGround(city: City): Promise<GroundObservationData> {
+  try {
+    const url = proxyUrl("/api/cma-ground", {
+      city: city.name,
+      stationId: city.cmaStationId,
+      stationName: city.cmaStationName,
+    });
+    const payload = await fetchJsonFromProxy(url);
+    const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+    const observation = record.observation && typeof record.observation === "object" ? (record.observation as GroundObservation) : undefined;
+    if (!observation) throw new Error("CMA proxy returned no observation");
+    return {
+      observation,
+      provider: "中国气象数据网 CMA 地面站实况",
+      note: `地面校准使用 ${observation.stationName ?? city.cmaStationName}(${observation.stationId ?? city.cmaStationId}) 最近一条定时观测。`,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "未知错误";
+    return {
+      provider: "CMA 地面站暂不可用",
+      note: `中国地面气象站实况暂不可用，本次湿度/气压/降水校准使用预报源。原因：${message}`,
+    };
+  }
+}
+
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
@@ -621,7 +682,14 @@ function makeVerdict(score: number, mode: Mode, calibration: Calibration) {
   return "正在读取真实气象数据。";
 }
 
-function calculateCore(hourlyInput: OpenMeteoResponse["hourly"], index: number, aod: number, calibration: Calibration, ecmwfHourly?: OpenMeteoResponse["hourly"]) {
+function calculateCore(
+  hourlyInput: OpenMeteoResponse["hourly"],
+  index: number,
+  aod: number,
+  calibration: Calibration,
+  ecmwfHourly?: OpenMeteoResponse["hourly"],
+  groundObservation?: GroundObservation,
+) {
   const hourly = hourlyInput ?? {};
   const times = hourly.time ?? [];
   const prevIndex = Math.max(0, index - 1);
@@ -630,8 +698,11 @@ function calculateCore(hourlyInput: OpenMeteoResponse["hourly"], index: number, 
   const low = at(hourly.cloud_cover_low, index, cloud * 0.45);
   const mid = at(hourly.cloud_cover_mid, index, cloud * 0.35);
   const high = at(hourly.cloud_cover_high, index, cloud * 0.25);
-  const humidity = at(hourly.relative_humidity_2m, index, 60);
-  const visibility = at(hourly.visibility, index, 10000);
+  const modelHumidity = at(hourly.relative_humidity_2m, index, 60);
+  const humidity = groundObservation?.humidity !== undefined ? modelHumidity * 0.35 + groundObservation.humidity * 0.65 : modelHumidity;
+  const modelVisibility = at(hourly.visibility, index, 10000);
+  const observedVisibility = groundObservation?.visibility;
+  const visibility = observedVisibility !== undefined && observedVisibility > 0 ? modelVisibility * 0.45 + observedVisibility * 0.55 : modelVisibility;
   const precip = at(hourly.precipitation_probability, index, 0);
   const precipPrev = at(hourly.precipitation_probability, prevIndex, precip);
   const precipNext = at(hourly.precipitation_probability, nextIndex, precip);
@@ -651,7 +722,8 @@ function calculateCore(hourlyInput: OpenMeteoResponse["hourly"], index: number, 
   const modelDiff = (Math.abs(cloud - ecmwfCloud) + Math.abs(low - ecmwfLow)) / 2;
   const consistencyFactor = clamp01(1 - modelDiff / 115);
   const cloudVariabilityScore = clamp(Math.abs(cloudNext - cloudPrev) * 2.25 + Math.abs(low - at(hourly.cloud_cover_low, prevIndex, low)) * 0.8);
-  const postRainSignal = clamp((precipPrev - precipNext) * 1.6 + Math.max(0, 55 - precip) * 0.45);
+  const observedRainSignal = clamp((groundObservation?.precipitation1h ?? 0) * 32 + (groundObservation?.precipitation3h ?? 0) * 16);
+  const postRainSignal = clamp((precipPrev - precipNext) * 1.6 + Math.max(0, 55 - precip) * 0.45 + observedRainSignal * 0.45);
   const modelDisagreementSignal = clamp(modelDiff * 1.4);
   const horizonGapScore = clamp(
     (low >= 20 && low <= 65 ? 38 : low < 20 ? 18 : 4) +
@@ -745,9 +817,12 @@ function makeForecast(
   city: City,
   aodData?: AirQualityResponse,
   ecmwf?: OpenMeteoResponse,
+  groundData?: GroundObservationData,
   sourceMeta: DataSourceMeta = {
     weatherProvider: "Open-Meteo GFS fallback",
     airProvider: "Open-Meteo AOD fallback",
+    groundProvider: "无地面站校准",
+    groundNote: "未配置 CMA 地面站接口，本次使用预报源。",
     note: "未配置中国官方代理，本次使用 Open-Meteo 兜底数据。",
   },
 ): Forecast {
@@ -761,7 +836,7 @@ function makeForecast(
   const targetIndex = nearestIndex(times, target);
   const aodIndex = nearestIndex(aodData?.hourly?.time, target);
   const aod = at(aodData?.hourly?.aerosol_optical_depth, aodIndex, 0.16);
-  const core = calculateCore(hourly, targetIndex, aod, calibration, ecmwf?.hourly);
+  const core = calculateCore(hourly, targetIndex, aod, calibration, ecmwf?.hourly, groundData?.observation);
   const solar = solarPosition(city.latitude, city.longitude, target);
   const solarFactor = clamp01(0.78 + (1 - Math.min(Math.abs(solar.altitude + 3) / 13, 1)) * 0.27);
   const stableScore = clamp(
@@ -779,7 +854,7 @@ function makeForecast(
     const itemIndex = eventTime ? nearestIndex(times, addMinutes(eventTime, offset)) : targetIndex;
     const pointTarget = eventTime ? addMinutes(eventTime, offset) : target;
     const pointSolar = solarPosition(city.latitude, city.longitude, pointTarget);
-    const pointCore = calculateCore(hourly, itemIndex, aod, calibration, ecmwf?.hourly);
+    const pointCore = calculateCore(hourly, itemIndex, aod, calibration, ecmwf?.hourly, groundData?.observation);
     const pointSolarFactor = clamp01(0.78 + (1 - Math.min(Math.abs(pointSolar.altitude + 3) / 13, 1)) * 0.27);
     const value = clamp(100 * Math.sqrt(pointCore.lightPath * pointCore.cloudCanvas) * pointCore.aodFactor * pointSolarFactor * pointCore.precipFactor * pointCore.consistencyFactor);
     return {
@@ -816,7 +891,16 @@ function makeForecast(
     model_disagreement_signal: core.modelDisagreementSignal,
     weatherProvider: sourceMeta.weatherProvider,
     airProvider: sourceMeta.airProvider,
-    dataSourceNote: sourceMeta.note,
+    groundProvider: groundData?.provider ?? sourceMeta.groundProvider,
+    groundStation: groundData?.observation?.stationName || groundData?.observation?.stationId || "--",
+    groundDataTime: groundData?.observation?.time ? formatTime(groundData.observation.time) : "--",
+    observedHumidity: groundData?.observation?.humidity !== undefined ? `${Math.round(groundData.observation.humidity)}%` : "--",
+    observedPressure: groundData?.observation?.pressure !== undefined ? `${Math.round(groundData.observation.pressure)} hPa` : "--",
+    observedPrecipitation:
+      groundData?.observation?.precipitation1h !== undefined || groundData?.observation?.precipitation3h !== undefined
+        ? `${groundData.observation.precipitation1h ?? "--"}/${groundData.observation.precipitation3h ?? "--"} mm`
+        : "--",
+    dataSourceNote: `${sourceMeta.note} ${groundData?.note ?? sourceMeta.groundNote}`,
   };
   const profile = makeProfile(core, aod, solar.azimuth);
   const tags = makeTags(core, stableScore, burstScore, calibration);
@@ -836,13 +920,13 @@ function makeForecast(
     algorithm_version: algorithmVersion,
     city_calibration_version: calibrationMap.version,
     verdict: makeVerdict(score, mode, calibration),
-    summary: `${describeRaw(raw)} 数据源：${sourceMeta.weatherProvider} / ${sourceMeta.airProvider}。高分必须同时满足太阳方向光路通透和本地中高云画布可用；爆发潜力用于捕捉雨后开缝、低云边缘透光和模型分歧下的变化机会。`,
+    summary: `${describeRaw(raw)} 数据源：${sourceMeta.weatherProvider} / ${sourceMeta.airProvider} / ${raw.groundProvider}。高分必须同时满足太阳方向光路通透和本地中高云画布可用；爆发潜力用于捕捉雨后开缝、低云边缘透光和模型分歧下的变化机会。`,
     peak: peakPoint?.time ?? formatTime(target.toISOString()),
     sunTime: formatTime(eventTime),
     updatedAt: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }),
     trend: "实时",
     color,
-    source: `${sourceMeta.weatherProvider} · ${sourceMeta.airProvider}`,
+    source: `${sourceMeta.weatherProvider} · ${sourceMeta.airProvider} · ${raw.groundProvider}`,
     raw,
     factors: [
       { label: "光路通透度", value: raw.lightPath, note: "太阳方向低云、雨幕、能见度和过高 AOD 会共同压低光路" },
@@ -882,13 +966,14 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
     forecast_days: "2",
     hourly: "aerosol_optical_depth",
   });
-  const [gfsResponse, ecmwfResponse, airResponse, chinaWeatherResponse, aeronetResponse, meeAirResponse] = await Promise.allSettled([
+  const [gfsResponse, ecmwfResponse, airResponse, chinaWeatherResponse, aeronetResponse, meeAirResponse, cmaGroundResponse] = await Promise.allSettled([
     fetch(`https://api.open-meteo.com/v1/gfs?${gfsParams.toString()}`),
     fetch(`https://api.open-meteo.com/v1/ecmwf?${ecmwfParams.toString()}`),
     fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?${airParams.toString()}`),
     fetchChinaWeather(city),
     fetchAeronetAod(city),
     fetchMEEAir(city),
+    fetchCmaGround(city),
   ]);
   if (gfsResponse.status !== "fulfilled" || !gfsResponse.value.ok) {
     throw new Error("GFS request failed");
@@ -923,17 +1008,26 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
           provider: "AERONET 暂无有效实测",
           note: "AERONET 站点暂无可用 Level 2.0 AOD，已尝试降级到生态环境部空气质量。",
         };
+  const cmaGround =
+    cmaGroundResponse.status === "fulfilled"
+      ? cmaGroundResponse.value
+      : {
+          provider: "CMA 地面站暂不可用",
+          note: "中国地面气象站实况暂不可用，本次湿度/气压/降水校准使用预报源。",
+        };
   const primaryWeather = mergeForecastSource(gfs, chinaWeather.forecast);
   const primaryAir = mergeAirSource(mergeAirSource(air, meeAir.air), aeronetAir.air);
   const sourceMeta = {
     weatherProvider: chinaWeather.provider,
     airProvider: aeronetAir.air ? aeronetAir.provider : meeAir.provider,
+    groundProvider: cmaGround.provider,
+    groundNote: cmaGround.note,
     note: `${chinaWeather.note} ${aeronetAir.note} ${aeronetAir.air ? "" : meeAir.note}`,
   };
   return {
     ...city,
-    sunset: makeForecast(primaryWeather, "sunset", city, primaryAir, ecmwf, sourceMeta),
-    sunrise: makeForecast(primaryWeather, "sunrise", city, primaryAir, ecmwf, sourceMeta),
+    sunset: makeForecast(primaryWeather, "sunset", city, primaryAir, ecmwf, cmaGround, sourceMeta),
+    sunrise: makeForecast(primaryWeather, "sunrise", city, primaryAir, ecmwf, cmaGround, sourceMeta),
   };
 }
 
@@ -1124,6 +1218,12 @@ export default function Home() {
             ["预报小时", forecast.raw.dataTime],
             ["天气源", forecast.raw.weatherProvider],
             ["空气源", forecast.raw.airProvider],
+            ["地面站源", forecast.raw.groundProvider],
+            ["地面站", forecast.raw.groundStation],
+            ["实况时间", forecast.raw.groundDataTime],
+            ["实况湿度", forecast.raw.observedHumidity],
+            ["实况气压", forecast.raw.observedPressure],
+            ["实况降水", forecast.raw.observedPrecipitation],
             ["太阳方位", `${forecast.raw.solarAzimuth}°`],
             ["太阳高度", `${forecast.raw.solarAltitude}°`],
             ["总云量", `${forecast.raw.cloud}%`],
