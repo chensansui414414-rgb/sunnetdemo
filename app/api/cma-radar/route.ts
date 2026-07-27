@@ -24,6 +24,7 @@ type CmaRadarFile = {
   datetime?: string;
   format?: string;
   fileName?: string;
+  fileUrl?: string;
 };
 
 type CmaRadarProxyPayload = {
@@ -85,7 +86,60 @@ function normalizeFile(row: CmaRow): CmaRadarFile {
     datetime: stringFrom(row.DATETIME),
     format: stringFrom(row.FORMAT),
     fileName: stringFrom(row.FILE_NAME),
+    fileUrl: stringFrom(row.FILE_URL),
   };
+}
+
+function publicPayload(payload: CmaRadarProxyPayload) {
+  const stripSignedUrl = (file: CmaRadarFile) => ({
+    stationId: file.stationId,
+    datetime: file.datetime,
+    format: file.format,
+    fileName: file.fileName,
+  });
+  return {
+    ...payload,
+    latest: payload.latest ? stripSignedUrl(payload.latest) : undefined,
+    files: payload.files.map(stripSignedUrl),
+    imageAvailable: Boolean(payload.latest?.fileUrl),
+  };
+}
+
+async function proxyRadarImage(file: CmaRadarFile) {
+  if (!file.fileUrl) throw new Error("CMA radar metadata has no FILE_URL");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(file.fileUrl, {
+      headers: {
+        Accept: "image/png,image/*;q=0.8,*/*;q=0.1",
+        "User-Agent": "GlowCast/1.0",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`CMA radar PNG download failed: ${response.status}`);
+    const upstreamContentType = response.headers.get("content-type");
+    const contentType =
+      file.format?.toLowerCase() === "png" || file.fileName?.toLowerCase().endsWith(".png")
+        ? "image/png"
+        : upstreamContentType || "application/octet-stream";
+    const image = await response.arrayBuffer();
+    if (!image.byteLength) throw new Error("CMA radar PNG is empty");
+
+    return new Response(image, {
+      status: 200,
+      headers: {
+        "Content-Type": contentType,
+        "Content-Length": String(image.byteLength),
+        "Cache-Control": "public, max-age=300, s-maxage=300",
+        "X-Radar-Data-Time": file.datetime || "",
+        "X-Radar-File-Name": file.fileName || "",
+      },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function fetchCmaRadar(city: string | undefined, stationId: string) {
@@ -132,9 +186,9 @@ async function fetchCmaRadar(city: string | undefined, stationId: string) {
       files,
       analysis: {
         status: files[0]?.fileName ? "metadata_only" : "no_file",
-        method: "该产品是全国雷达组网组合反射率图，CMA 返回 FILE_NAME 元数据；暂不把文件名伪装成反射率强度。",
-        note: files[0]?.fileName
-          ? "已拿到最新雷达图文件名。要计算雨幕评分和退雨评分，还需要 CMA 雷达文件下载接口或可访问的 PNG URL。"
+        method: "该产品是全国雷达组网组合反射率图；JSON 模式只返回安全元数据，PNG 由同源后端代理下载。",
+        note: files[0]?.fileUrl
+          ? "已取得 CMA 临时 PNG 地址，可通过 format=image 同源代理读取；尚未进行像素反射率解析。"
           : "未拿到可解析雷达文件。",
       },
       cma_raw: {
@@ -152,6 +206,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const city = url.searchParams.get("city") || undefined;
   const stationId = url.searchParams.get("stationId");
+  const format = url.searchParams.get("format") || "json";
 
   if (!stationId) {
     return Response.json(
@@ -166,17 +221,18 @@ export async function GET(request: Request) {
 
   const cacheKey = stationId;
   const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return Response.json({ ...cached.payload, cache: "hit" });
-  }
+  const validCached = cached && cached.expiresAt > Date.now() ? cached : undefined;
 
   try {
-    const payload = await fetchCmaRadar(city, stationId);
+    const payload = validCached?.payload ?? await fetchCmaRadar(city, stationId);
+    if (format === "image") {
+      return await proxyRadarImage(payload.latest ?? {});
+    }
     cache.set(cacheKey, {
       expiresAt: Date.now() + CACHE_TTL_MS,
       payload,
     });
-    return Response.json({ ...payload, cache: "miss" });
+    return Response.json({ ...publicPayload(payload), cache: validCached ? "hit" : "miss" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown CMA radar error";
     return Response.json(
