@@ -80,6 +80,10 @@ type Forecast = {
     observedHumidity: string;
     observedPressure: string;
     observedPrecipitation: string;
+    radarProvider: string;
+    radarStation: string;
+    radarTime: string;
+    radarFile: string;
     dataSourceNote: string;
   };
 };
@@ -111,6 +115,8 @@ type City = {
   aeronetSite: string;
   cmaStationId: string;
   cmaStationName: string;
+  cmaRadarStationId: string;
+  cmaRadarStationName: string;
 };
 
 type CityForecast = City & {
@@ -176,21 +182,34 @@ type GroundObservationData = {
   note: string;
 };
 
+type RadarData = {
+  latest?: {
+    stationId?: string;
+    datetime?: string;
+    format?: string;
+    fileName?: string;
+  };
+  provider: string;
+  note: string;
+};
+
 type DataSourceMeta = {
   weatherProvider: string;
   airProvider: string;
   groundProvider: string;
   groundNote: string;
+  radarProvider: string;
+  radarNote: string;
   note: string;
 };
 
 const cityConfigs: City[] = [
-  { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969, smartWeatherCode: "101190101", airCityName: "南京市", airCityCode: "320100", aeronetSite: "Nanjing", cmaStationId: "58238", cmaStationName: "南京" },
-  { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737, smartWeatherCode: "101020100", airCityName: "上海市", airCityCode: "310000", aeronetSite: "Shanghai", cmaStationId: "58367", cmaStationName: "徐家汇" },
-  { name: "北京", en: "BEIJING", latlon: "39.90N / 116.40E", latitude: 39.9042, longitude: 116.4074, smartWeatherCode: "101010100", airCityName: "北京市", airCityCode: "110000", aeronetSite: "Beijing", cmaStationId: "54511", cmaStationName: "北京" },
-  { name: "广州", en: "GUANGZHOU", latlon: "23.13N / 113.26E", latitude: 23.1291, longitude: 113.2644, smartWeatherCode: "101280101", airCityName: "广州市", airCityCode: "440100", aeronetSite: "Guangzhou", cmaStationId: "59287", cmaStationName: "广州" },
-  { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943, smartWeatherCode: "101190501", airCityName: "南通市", airCityCode: "320600", aeronetSite: "Nanjing", cmaStationId: "58259", cmaStationName: "南通" },
-  { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668, smartWeatherCode: "101270101", airCityName: "成都市", airCityCode: "510100", aeronetSite: "Chengdu", cmaStationId: "56187", cmaStationName: "温江" },
+  { name: "南京", en: "NANJING", latlon: "32.06N / 118.79E", latitude: 32.0603, longitude: 118.7969, smartWeatherCode: "101190101", airCityName: "南京市", airCityCode: "320100", aeronetSite: "Nanjing", cmaStationId: "58238", cmaStationName: "南京", cmaRadarStationId: "Z9250", cmaRadarStationName: "南京" },
+  { name: "上海", en: "SHANGHAI", latlon: "31.23N / 121.47E", latitude: 31.2304, longitude: 121.4737, smartWeatherCode: "101020100", airCityName: "上海市", airCityCode: "310000", aeronetSite: "Shanghai", cmaStationId: "58367", cmaStationName: "徐家汇", cmaRadarStationId: "Z9002", cmaRadarStationName: "青浦" },
+  { name: "北京", en: "BEIJING", latlon: "39.90N / 116.40E", latitude: 39.9042, longitude: 116.4074, smartWeatherCode: "101010100", airCityName: "北京市", airCityCode: "110000", aeronetSite: "Beijing", cmaStationId: "54511", cmaStationName: "北京", cmaRadarStationId: "Z9010", cmaRadarStationName: "大兴" },
+  { name: "广州", en: "GUANGZHOU", latlon: "23.13N / 113.26E", latitude: 23.1291, longitude: 113.2644, smartWeatherCode: "101280101", airCityName: "广州市", airCityCode: "440100", aeronetSite: "Guangzhou", cmaStationId: "59287", cmaStationName: "广州", cmaRadarStationId: "Z9200", cmaRadarStationName: "广州" },
+  { name: "南通", en: "NANTONG", latlon: "31.98N / 120.89E", latitude: 31.9802, longitude: 120.8943, smartWeatherCode: "101190501", airCityName: "南通市", airCityCode: "320600", aeronetSite: "Nanjing", cmaStationId: "58259", cmaStationName: "南通", cmaRadarStationId: "Z9513", cmaRadarStationName: "南通" },
+  { name: "成都", en: "CHENGDU", latlon: "30.57N / 104.07E", latitude: 30.5728, longitude: 104.0668, smartWeatherCode: "101270101", airCityName: "成都市", airCityCode: "510100", aeronetSite: "Chengdu", cmaStationId: "56187", cmaStationName: "温江", cmaRadarStationId: "Z9280", cmaRadarStationName: "成都" },
 ];
 
 const modeLabels: Record<Mode, string> = {
@@ -253,6 +272,10 @@ const fallbackForecast: Forecast = {
     observedHumidity: "--",
     observedPressure: "--",
     observedPrecipitation: "--",
+    radarProvider: "等待数据",
+    radarStation: "--",
+    radarTime: "--",
+    radarFile: "--",
     dataSourceNote: "正在连接数据源",
   },
   factors: [
@@ -565,6 +588,30 @@ async function fetchCmaGround(city: City): Promise<GroundObservationData> {
   }
 }
 
+async function fetchCmaRadar(city: City): Promise<RadarData> {
+  try {
+    const url = proxyUrl("/api/cma-radar", {
+      city: city.name,
+      stationId: city.cmaRadarStationId,
+    });
+    const payload = await fetchJsonFromProxy(url);
+    const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+    const latest = record.latest && typeof record.latest === "object" ? (record.latest as RadarData["latest"]) : undefined;
+    if (!latest) throw new Error("CMA radar proxy returned no latest file");
+    return {
+      latest,
+      provider: "CMA 雷达组合反射率",
+      note: `雷达参考使用 ${city.cmaRadarStationName}(${city.cmaRadarStationId}) 最近一张组合反射率 PNG。`,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "未知错误";
+    return {
+      provider: "CMA 雷达暂不可用",
+      note: `CMA 雷达组合反射率暂不可用，本次降水/雨幕风险仍使用预报源与地面站降水。原因：${message}`,
+    };
+  }
+}
+
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
@@ -818,11 +865,14 @@ function makeForecast(
   aodData?: AirQualityResponse,
   ecmwf?: OpenMeteoResponse,
   groundData?: GroundObservationData,
+  radarData?: RadarData,
   sourceMeta: DataSourceMeta = {
     weatherProvider: "Open-Meteo GFS fallback",
     airProvider: "Open-Meteo AOD fallback",
     groundProvider: "无地面站校准",
     groundNote: "未配置 CMA 地面站接口，本次使用预报源。",
+    radarProvider: "无雷达校验",
+    radarNote: "未配置 CMA 雷达接口，本次不使用雷达图像。",
     note: "未配置中国官方代理，本次使用 Open-Meteo 兜底数据。",
   },
 ): Forecast {
@@ -900,7 +950,11 @@ function makeForecast(
       groundData?.observation?.precipitation1h !== undefined || groundData?.observation?.precipitation3h !== undefined
         ? `${groundData.observation.precipitation1h ?? "--"}/${groundData.observation.precipitation3h ?? "--"} mm`
         : "--",
-    dataSourceNote: `${sourceMeta.note} ${groundData?.note ?? sourceMeta.groundNote}`,
+    radarProvider: radarData?.provider ?? sourceMeta.radarProvider,
+    radarStation: radarData?.latest?.stationId ? `${city.cmaRadarStationName}(${radarData.latest.stationId})` : "--",
+    radarTime: radarData?.latest?.datetime ?? "--",
+    radarFile: radarData?.latest?.fileName ?? "--",
+    dataSourceNote: `${sourceMeta.note} ${groundData?.note ?? sourceMeta.groundNote} ${radarData?.note ?? sourceMeta.radarNote}`,
   };
   const profile = makeProfile(core, aod, solar.azimuth);
   const tags = makeTags(core, stableScore, burstScore, calibration);
@@ -920,13 +974,13 @@ function makeForecast(
     algorithm_version: algorithmVersion,
     city_calibration_version: calibrationMap.version,
     verdict: makeVerdict(score, mode, calibration),
-    summary: `${describeRaw(raw)} 数据源：${sourceMeta.weatherProvider} / ${sourceMeta.airProvider} / ${raw.groundProvider}。高分必须同时满足太阳方向光路通透和本地中高云画布可用；爆发潜力用于捕捉雨后开缝、低云边缘透光和模型分歧下的变化机会。`,
+    summary: `${describeRaw(raw)} 数据源：${sourceMeta.weatherProvider} / ${sourceMeta.airProvider} / ${raw.groundProvider} / ${raw.radarProvider}。高分必须同时满足太阳方向光路通透和本地中高云画布可用；爆发潜力用于捕捉雨后开缝、低云边缘透光和模型分歧下的变化机会。`,
     peak: peakPoint?.time ?? formatTime(target.toISOString()),
     sunTime: formatTime(eventTime),
     updatedAt: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }),
     trend: "实时",
     color,
-    source: `${sourceMeta.weatherProvider} · ${sourceMeta.airProvider} · ${raw.groundProvider}`,
+    source: `${sourceMeta.weatherProvider} · ${sourceMeta.airProvider} · ${raw.groundProvider} · ${raw.radarProvider}`,
     raw,
     factors: [
       { label: "光路通透度", value: raw.lightPath, note: "太阳方向低云、雨幕、能见度和过高 AOD 会共同压低光路" },
@@ -966,7 +1020,7 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
     forecast_days: "2",
     hourly: "aerosol_optical_depth",
   });
-  const [gfsResponse, ecmwfResponse, airResponse, chinaWeatherResponse, aeronetResponse, meeAirResponse, cmaGroundResponse] = await Promise.allSettled([
+  const [gfsResponse, ecmwfResponse, airResponse, chinaWeatherResponse, aeronetResponse, meeAirResponse, cmaGroundResponse, cmaRadarResponse] = await Promise.allSettled([
     fetch(`https://api.open-meteo.com/v1/gfs?${gfsParams.toString()}`),
     fetch(`https://api.open-meteo.com/v1/ecmwf?${ecmwfParams.toString()}`),
     fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?${airParams.toString()}`),
@@ -974,6 +1028,7 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
     fetchAeronetAod(city),
     fetchMEEAir(city),
     fetchCmaGround(city),
+    fetchCmaRadar(city),
   ]);
   if (gfsResponse.status !== "fulfilled" || !gfsResponse.value.ok) {
     throw new Error("GFS request failed");
@@ -1015,6 +1070,13 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
           provider: "CMA 地面站暂不可用",
           note: "中国地面气象站实况暂不可用，本次湿度/气压/降水校准使用预报源。",
         };
+  const cmaRadar =
+    cmaRadarResponse.status === "fulfilled"
+      ? cmaRadarResponse.value
+      : {
+          provider: "CMA 雷达暂不可用",
+          note: "CMA 雷达组合反射率暂不可用，本次降水/雨幕风险仍使用预报源与地面站降水。",
+        };
   const primaryWeather = mergeForecastSource(gfs, chinaWeather.forecast);
   const primaryAir = mergeAirSource(mergeAirSource(air, meeAir.air), aeronetAir.air);
   const sourceMeta = {
@@ -1022,12 +1084,14 @@ async function fetchCityForecast(city: City): Promise<CityForecast> {
     airProvider: aeronetAir.air ? aeronetAir.provider : meeAir.provider,
     groundProvider: cmaGround.provider,
     groundNote: cmaGround.note,
+    radarProvider: cmaRadar.provider,
+    radarNote: cmaRadar.note,
     note: `${chinaWeather.note} ${aeronetAir.note} ${aeronetAir.air ? "" : meeAir.note}`,
   };
   return {
     ...city,
-    sunset: makeForecast(primaryWeather, "sunset", city, primaryAir, ecmwf, cmaGround, sourceMeta),
-    sunrise: makeForecast(primaryWeather, "sunrise", city, primaryAir, ecmwf, cmaGround, sourceMeta),
+    sunset: makeForecast(primaryWeather, "sunset", city, primaryAir, ecmwf, cmaGround, cmaRadar, sourceMeta),
+    sunrise: makeForecast(primaryWeather, "sunrise", city, primaryAir, ecmwf, cmaGround, cmaRadar, sourceMeta),
   };
 }
 
@@ -1224,6 +1288,10 @@ export default function Home() {
             ["实况湿度", forecast.raw.observedHumidity],
             ["实况气压", forecast.raw.observedPressure],
             ["实况降水", forecast.raw.observedPrecipitation],
+            ["雷达源", forecast.raw.radarProvider],
+            ["雷达站", forecast.raw.radarStation],
+            ["雷达时间", forecast.raw.radarTime],
+            ["雷达文件", forecast.raw.radarFile],
             ["太阳方位", `${forecast.raw.solarAzimuth}°`],
             ["太阳高度", `${forecast.raw.solarAltitude}°`],
             ["总云量", `${forecast.raw.cloud}%`],
