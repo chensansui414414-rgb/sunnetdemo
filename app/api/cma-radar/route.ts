@@ -1,3 +1,10 @@
+import {
+  analyzeRadarImage,
+  decodeRadarPng,
+  radarCityCalibrations,
+  type RadarImageMetrics,
+} from "./radar-image";
+
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const CMA_API_URL = "http://api.data.cma.cn:8090/api";
 const DATA_CODE = "RADA_L3_MST_V3_CREF_PNG";
@@ -25,6 +32,7 @@ type CmaRadarFile = {
   format?: string;
   fileName?: string;
   fileUrl?: string;
+  regionCode?: string;
 };
 
 type CmaRadarProxyPayload = {
@@ -34,10 +42,20 @@ type CmaRadarProxyPayload = {
   latest?: CmaRadarFile;
   files: CmaRadarFile[];
   analysis: {
-    status: "metadata_only" | "no_file";
+    status: "parsed" | "metadata_only" | "no_file";
     method: string;
     rainWallScore?: number;
     clearingScore?: number;
+    echoTrend?: "increasing" | "stable" | "decreasing";
+    cityMetrics?: RadarImageMetrics["city"];
+    sunrisePathMetrics?: RadarImageMetrics["sunrisePath"];
+    sunsetPathMetrics?: RadarImageMetrics["sunsetPath"];
+    previousCityMetrics?: RadarImageMetrics["city"];
+    dataAgeMinutes?: number;
+    regionCode?: string;
+    imageSize?: { width: number; height: number };
+    geolocationQuality?: "city_control_point_approximation";
+    reflectivityScale?: "5-70 dBZ, 5 dBZ intervals";
     note: string;
   };
   cma_raw?: {
@@ -81,14 +99,25 @@ function rowsFrom(payload: unknown): CmaRow[] {
 }
 
 function normalizeFile(row: CmaRow): CmaRadarFile {
+  const fileName = stringFrom(row.FILE_NAME);
   return {
     stationId: stringFrom(row.Station_Id_C),
     datetime: stringFrom(row.DATETIME),
     format: stringFrom(row.FORMAT),
-    fileName: stringFrom(row.FILE_NAME),
+    fileName,
     fileUrl: stringFrom(row.FILE_URL),
+    regionCode: fileName?.match(/_DOR_([A-Z0-9]+)_CREF_/)?.[1],
   };
 }
+
+const radarRegionByCity: Record<string, string> = {
+  北京: "ANCN",
+  上海: "AECN",
+  南京: "AECN",
+  南通: "AECN",
+  广州: "ASCN",
+  成都: "ASWC",
+};
 
 function publicPayload(payload: CmaRadarProxyPayload) {
   const stripSignedUrl = (file: CmaRadarFile) => ({
@@ -96,6 +125,7 @@ function publicPayload(payload: CmaRadarProxyPayload) {
     datetime: file.datetime,
     format: file.format,
     fileName: file.fileName,
+    regionCode: file.regionCode,
   });
   return {
     ...payload,
@@ -142,6 +172,108 @@ async function proxyRadarImage(file: CmaRadarFile) {
   }
 }
 
+async function downloadRadarImage(file: CmaRadarFile) {
+  if (!file.fileUrl) throw new Error("CMA radar metadata has no FILE_URL");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(file.fileUrl, {
+      headers: {
+        Accept: "image/png,image/*;q=0.8,*/*;q=0.1",
+        "User-Agent": "GlowCast/1.0",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`CMA radar PNG download failed: ${response.status}`);
+    const image = await response.arrayBuffer();
+    if (!image.byteLength) throw new Error("CMA radar PNG is empty");
+    return image;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function parseCmaUtc(value?: string) {
+  if (!value || !/^\d{14}$/.test(value)) return undefined;
+  return Date.UTC(
+    Number(value.slice(0, 4)),
+    Number(value.slice(4, 6)) - 1,
+    Number(value.slice(6, 8)),
+    Number(value.slice(8, 10)),
+    Number(value.slice(10, 12)),
+    Number(value.slice(12, 14)),
+  );
+}
+
+async function parseRadarAnalysis(
+  city: string | undefined,
+  files: CmaRadarFile[],
+  fallback: CmaRadarProxyPayload["analysis"],
+): Promise<CmaRadarProxyPayload["analysis"]> {
+  if (!city) return fallback;
+  const calibration = radarCityCalibrations[city];
+  const latest = files[0];
+  if (!calibration || !latest?.fileUrl || latest.regionCode !== calibration.regionCode) return fallback;
+
+  try {
+    const previous = files.find((file) => {
+      const latestTime = parseCmaUtc(latest.datetime);
+      const fileTime = parseCmaUtc(file.datetime);
+      return latestTime !== undefined && fileTime !== undefined && latestTime - fileTime >= 10 * 60 * 1000;
+    });
+    const [latestBuffer, previousBuffer] = await Promise.all([
+      downloadRadarImage(latest),
+      previous?.fileUrl ? downloadRadarImage(previous) : Promise.resolve(undefined),
+    ]);
+    const latestImage = await decodeRadarPng(latestBuffer);
+    const latestMetrics = analyzeRadarImage(latestImage, calibration);
+    let previousMetrics: RadarImageMetrics | undefined;
+    if (previousBuffer) {
+      previousMetrics = analyzeRadarImage(await decodeRadarPng(previousBuffer), calibration);
+    }
+
+    const coverageDelta = previousMetrics
+      ? latestMetrics.city.echoCoverage - previousMetrics.city.echoCoverage
+      : 0;
+    const echoTrend = coverageDelta >= 4 ? "increasing" : coverageDelta <= -4 ? "decreasing" : "stable";
+    const sunsetRisk =
+      latestMetrics.sunsetPath.echoCoverage * 1.7 +
+      latestMetrics.sunsetPath.strongEchoCoverage * 2.2 +
+      Math.max(0, latestMetrics.sunsetPath.maxDbz - 25) * 0.7;
+    const cityRisk =
+      latestMetrics.city.echoCoverage * 1.35 +
+      latestMetrics.city.strongEchoCoverage * 1.8 +
+      Math.max(0, latestMetrics.city.maxDbz - 25) * 0.55;
+    const rainWallScore = Math.round(Math.min(100, Math.max(sunsetRisk, cityRisk)));
+    const clearingScore = Math.round(Math.min(100, Math.max(0, 45 - coverageDelta * 4 - rainWallScore * 0.2)));
+    const dataTime = parseCmaUtc(latest.datetime);
+
+    return {
+      status: "parsed",
+      method: `按城市选择 ${calibration.regionCode} 区域组合反射率图，使用 PNG 固定色标将像素转换为 5–70 dBZ，并统计城市周边、东向日出光路和西向日落光路。`,
+      rainWallScore,
+      clearingScore,
+      echoTrend,
+      cityMetrics: latestMetrics.city,
+      sunrisePathMetrics: latestMetrics.sunrisePath,
+      sunsetPathMetrics: latestMetrics.sunsetPath,
+      previousCityMetrics: previousMetrics?.city,
+      dataAgeMinutes: dataTime === undefined ? undefined : Math.max(0, Math.round((Date.now() - dataTime) / 60000)),
+      regionCode: calibration.regionCode,
+      imageSize: { width: latestImage.width, height: latestImage.height },
+      geolocationQuality: "city_control_point_approximation",
+      reflectivityScale: "5-70 dBZ, 5 dBZ intervals",
+      note: "雷达反射率和趋势来自真实 CMA PNG；城市位置采用图上城市控制点拟合，适用于区域风险统计，不等同于官方雷达格点。",
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "未知解析错误";
+    return {
+      ...fallback,
+      note: `${fallback.note} PNG 像素解析降级：${message}`,
+    };
+  }
+}
+
 async function fetchCmaRadar(city: string | undefined, stationId: string) {
   const userId = process.env.CMA_RADAR_USER_ID;
   const password = process.env.CMA_RADAR_PASSWORD;
@@ -171,26 +303,31 @@ async function fetchCmaRadar(city: string | undefined, stationId: string) {
     });
     if (!response.ok) throw new Error(`CMA radar request failed: ${response.status}`);
     const payload = (await response.json()) as CmaPayload;
-    const files = rowsFrom(payload)
+    const allFiles = rowsFrom(payload)
       .map(normalizeFile)
       .filter((item) => item.fileName || item.datetime)
       .sort((a, b) => (b.datetime ?? "").localeCompare(a.datetime ?? ""));
-    if (!files.length) {
+    if (!allFiles.length) {
       throw new Error(payload.returnMessage ? `CMA radar returned no files: ${payload.returnMessage}` : "CMA radar returned no files");
     }
+    const regionCode = city ? radarRegionByCity[city] : undefined;
+    const regionalFiles = regionCode ? allFiles.filter((file) => file.regionCode === regionCode) : allFiles;
+    const files = (regionalFiles.length ? regionalFiles : allFiles).slice(0, 24);
+    const fallbackAnalysis: CmaRadarProxyPayload["analysis"] = {
+      status: files[0]?.fileName ? "metadata_only" : "no_file",
+      method: `按城市选择 ${files[0]?.regionCode ?? "未知"} 区域雷达组网组合反射率图；JSON 模式只返回安全元数据，PNG 由同源后端代理下载。`,
+      note: files[0]?.fileUrl
+        ? "已取得 CMA 临时 PNG 地址；像素解析暂时不可用。"
+        : "未拿到可解析雷达文件。",
+    };
+    const analysis = await parseRadarAnalysis(city, files, fallbackAnalysis);
     return {
       source: "中国气象数据网 CMA 天气雷达组网组合反射率图像产品",
       city,
       stationId,
       latest: files[0],
       files,
-      analysis: {
-        status: files[0]?.fileName ? "metadata_only" : "no_file",
-        method: "该产品是全国雷达组网组合反射率图；JSON 模式只返回安全元数据，PNG 由同源后端代理下载。",
-        note: files[0]?.fileUrl
-          ? "已取得 CMA 临时 PNG 地址，可通过 format=image 同源代理读取；尚未进行像素反射率解析。"
-          : "未拿到可解析雷达文件。",
-      },
+      analysis,
       cma_raw: {
         returnCode: payload.returnCode,
         returnMessage: payload.returnMessage,

@@ -96,6 +96,11 @@ type Forecast = {
     radarAnalysis: string;
     radarRainWallScore: string;
     radarClearingScore: string;
+    radarEchoCoverage: string;
+    radarPathEchoCoverage: string;
+    radarMaxDbz: string;
+    radarEchoTrend: string;
+    radarDataAge: string;
     dataSourceNote: string;
   };
 };
@@ -202,12 +207,33 @@ type RadarData = {
     datetime?: string;
     format?: string;
     fileName?: string;
+    regionCode?: string;
   };
   analysis?: {
     status?: string;
     method?: string;
     rainWallScore?: number;
     clearingScore?: number;
+    echoTrend?: string;
+    dataAgeMinutes?: number;
+    cityMetrics?: {
+      echoCoverage?: number;
+      strongEchoCoverage?: number;
+      maxDbz?: number;
+      meanDbz?: number;
+    };
+    sunrisePathMetrics?: {
+      echoCoverage?: number;
+      strongEchoCoverage?: number;
+      maxDbz?: number;
+      meanDbz?: number;
+    };
+    sunsetPathMetrics?: {
+      echoCoverage?: number;
+      strongEchoCoverage?: number;
+      maxDbz?: number;
+      meanDbz?: number;
+    };
     note?: string;
   };
   provider: string;
@@ -386,6 +412,11 @@ const fallbackForecast: Forecast = {
     radarAnalysis: "等待数据",
     radarRainWallScore: "--",
     radarClearingScore: "--",
+    radarEchoCoverage: "--",
+    radarPathEchoCoverage: "--",
+    radarMaxDbz: "--",
+    radarEchoTrend: "--",
+    radarDataAge: "--",
     dataSourceNote: "正在连接数据源",
   },
   factors: [
@@ -713,7 +744,7 @@ async function fetchCmaRadar(city: City): Promise<RadarData> {
       latest,
       analysis,
       provider: "CMA 雷达组合反射率",
-      note: `雷达参考使用 ${city.cmaRadarStationName}(${city.cmaRadarStationId}) 最近一张组合反射率 PNG。`,
+      note: `雷达参考使用 ${latest.regionCode ?? "对应"} 区域最近一张组合反射率 PNG；站号参数仅保留接口兼容，不代表单站雷达图。`,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知错误";
@@ -1084,15 +1115,29 @@ function makeForecast(
   const core = calculateCore(hourly, targetIndex, aod, calibration, ecmwf?.hourly, groundData?.observation, upperAirData?.profile);
   const solar = solarPosition(city.latitude, city.longitude, target);
   const solarFactor = clamp01(0.78 + (1 - Math.min(Math.abs(solar.altitude + 3) / 13, 1)) * 0.27);
+  const radarPathMetrics = mode === "sunset" ? radarData?.analysis?.sunsetPathMetrics : radarData?.analysis?.sunrisePathMetrics;
+  const radarParsed = radarData?.analysis?.status === "parsed";
+  const radarRainWallScore = radarParsed ? radarData?.analysis?.rainWallScore ?? 0 : 0;
+  const radarClearingScore = radarParsed ? radarData?.analysis?.clearingScore ?? 0 : 0;
+  const radarFreshness =
+    radarData?.analysis?.dataAgeMinutes === undefined
+      ? 1
+      : clamp01(1 - Math.max(0, radarData.analysis.dataAgeMinutes - 15) / 90);
+  const radarPathPenalty = radarParsed
+    ? clamp01(1 - (radarRainWallScore / 100) * (0.08 + radarFreshness * 0.12))
+    : 1;
   const stableScore = clamp(
     100 *
       Math.sqrt(core.lightPath * core.cloudCanvas) *
       core.aodFactor *
       solarFactor *
       core.precipFactor *
-      core.consistencyFactor,
+      core.consistencyFactor *
+      radarPathPenalty,
   );
-  const burstScore = core.burstScore;
+  const burstScore = radarParsed
+    ? clamp(core.burstScore * 0.9 + radarClearingScore * 0.1 - radarRainWallScore * 0.04 * radarFreshness)
+    : core.burstScore;
   const score = stableScore;
   const confidence = clamp(38 + core.consistencyFactor * 36 + core.canvasStability * 14 - core.precip * 0.16, 28, 92);
   const timeline = offsets.map((offset, index) => {
@@ -1101,7 +1146,7 @@ function makeForecast(
     const pointSolar = solarPosition(city.latitude, city.longitude, pointTarget);
     const pointCore = calculateCore(hourly, itemIndex, aod, calibration, ecmwf?.hourly, groundData?.observation, upperAirData?.profile);
     const pointSolarFactor = clamp01(0.78 + (1 - Math.min(Math.abs(pointSolar.altitude + 3) / 13, 1)) * 0.27);
-    const value = clamp(100 * Math.sqrt(pointCore.lightPath * pointCore.cloudCanvas) * pointCore.aodFactor * pointSolarFactor * pointCore.precipFactor * pointCore.consistencyFactor);
+    const value = clamp(100 * Math.sqrt(pointCore.lightPath * pointCore.cloudCanvas) * pointCore.aodFactor * pointSolarFactor * pointCore.precipFactor * pointCore.consistencyFactor * radarPathPenalty);
     return {
       time: eventTime ? formatTime(addMinutes(eventTime, offset).toISOString()) : "--:--",
       value,
@@ -1146,12 +1191,17 @@ function makeForecast(
         ? `${groundData.observation.precipitation1h ?? "--"}/${groundData.observation.precipitation3h ?? "--"} mm`
         : "--",
     radarProvider: radarData?.provider ?? sourceMeta.radarProvider,
-    radarStation: radarData?.latest?.stationId ? `${city.cmaRadarStationName}(${radarData.latest.stationId})` : "--",
+    radarStation: radarData?.latest?.regionCode ? `${radarData.latest.regionCode} 区域拼图` : "--",
     radarTime: radarData?.latest?.datetime ?? "--",
     radarFile: radarData?.latest?.fileName ?? "--",
     radarAnalysis: radarData?.analysis?.status ?? "待解析",
     radarRainWallScore: radarData?.analysis?.rainWallScore !== undefined ? `${radarData.analysis.rainWallScore}` : "--",
     radarClearingScore: radarData?.analysis?.clearingScore !== undefined ? `${radarData.analysis.clearingScore}` : "--",
+    radarEchoCoverage: radarData?.analysis?.cityMetrics?.echoCoverage !== undefined ? `${radarData.analysis.cityMetrics.echoCoverage}%` : "--",
+    radarPathEchoCoverage: radarPathMetrics?.echoCoverage !== undefined ? `${radarPathMetrics.echoCoverage}%` : "--",
+    radarMaxDbz: radarPathMetrics?.maxDbz !== undefined ? `${radarPathMetrics.maxDbz} dBZ` : "--",
+    radarEchoTrend: radarData?.analysis?.echoTrend ?? "--",
+    radarDataAge: radarData?.analysis?.dataAgeMinutes !== undefined ? `${radarData.analysis.dataAgeMinutes} 分钟` : "--",
     upperAirProvider: upperAirData?.provider ?? sourceMeta.upperAirProvider,
     upperAirStation: upperAirData?.profile?.stationName || upperAirData?.profile?.stationId || "--",
     upperAirTime: upperAirData?.profile?.time ? formatTime(upperAirData.profile.time) : "--",
@@ -1164,7 +1214,15 @@ function makeForecast(
   };
   const profile = makeProfile(core, aod, solar.azimuth, upperAirData);
   const tags = makeTags(core, stableScore, burstScore, calibration);
-  const advice = makeAdvice(stableScore, burstScore, core, mode);
+  if (radarParsed && radarRainWallScore >= 55) tags.push("雷达雨幕");
+  if (radarParsed && radarData?.analysis?.echoTrend === "decreasing") tags.push("回波减弱");
+  const radarAdvice =
+    radarParsed && radarRainWallScore >= 55
+      ? " CMA 雷达显示城市或太阳方向存在较明显降水回波，稳定分已作有限降权。"
+      : radarParsed && radarData?.analysis?.echoTrend === "decreasing"
+        ? " CMA 雷达显示回波正在减弱，可关注雨后开缝窗口。"
+        : "";
+  const advice = `${makeAdvice(stableScore, burstScore, core, mode)}${radarAdvice}`;
 
   return {
     score,
@@ -1508,6 +1566,11 @@ export default function Home() {
             ["雷达解析", forecast.raw.radarAnalysis],
             ["雨幕评分", forecast.raw.radarRainWallScore],
             ["退雨评分", forecast.raw.radarClearingScore],
+            ["城市回波覆盖", forecast.raw.radarEchoCoverage],
+            [mode === "sunset" ? "西向光路回波" : "东向光路回波", forecast.raw.radarPathEchoCoverage],
+            ["光路最大反射率", forecast.raw.radarMaxDbz],
+            ["雷达回波趋势", forecast.raw.radarEchoTrend],
+            ["雷达数据时效", forecast.raw.radarDataAge],
             ["高空源", forecast.raw.upperAirProvider],
             ["高空站", forecast.raw.upperAirStation],
             ["高空时间", forecast.raw.upperAirTime],
